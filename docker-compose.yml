@@ -1,0 +1,99 @@
+# ==============================================================================
+# ESP32-S3 Cargo Monitor - Phase 3 MVP Stack
+# ==============================================================================
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Mosquitto MQTT Broker
+  # ----------------------------------------------------------------------------
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # Standard MQTT
+      - "8883:8883"   # MQTTS / TLS
+      - "9001:9001"   # WebSockets
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+      - ./mosquitto/certs:/mosquitto/certs
+    healthcheck:
+      # Simple TCP check using nc (netcat) which is available in alpine
+      test: ["CMD-SHELL", "nc -z localhost 1883 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # 2. MongoDB Database
+  # ----------------------------------------------------------------------------
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    restart: unless-stopped
+    # Port 27017 is NOT exported to the host, it's only available internally on the Docker network
+    expose:
+      - "27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      # Ping the database using mongosh
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # 3. Node.js Express Backend
+  # ----------------------------------------------------------------------------
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGO_URI=${MONGO_URI}
+      - MQTT_BROKER=mqtt://mosquitto
+      - MQTT_PORT=1883
+      - MQTT_USER=${MQTT_USER}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
+  # ----------------------------------------------------------------------------
+  # 4. React Vite Frontend via Nginx
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Build-time variables for Vite
+        # Routing relatively through Nginx's proxies avoiding hardcoded IPs
+        - VITE_API_URL=/api
+        - VITE_SOCKET_URL=/
+    container_name: frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+# ------------------------------------------------------------------------------
+# Named Volumes (for data persistence)
+# ------------------------------------------------------------------------------
+volumes:
+  mongo_data:
+    name: cargo_mongo_data
