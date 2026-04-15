@@ -7,9 +7,13 @@ export default function TruckMap({ telemetry, label }) {
   const hasFix = lat !== 0 && lon !== 0;
 
   return (
-    <section className="panel">
-      <h3 className="title" style={{ fontSize: "1.05rem" }}>Truck Location</h3>
-      <div className="map-wrap" style={{ marginTop: 8 }}>
+    <section className="panel-surface">
+      <div className="panel-headline">
+        <h3>Location Map</h3>
+        <p>Latest reported position for the selected truck</p>
+      </div>
+
+      <div className="map-wrap">
         {hasFix ? (
           <MapContainer key={`${lat}-${lon}`} center={[lat, lon]} zoom={13} scrollWheelZoom={false}>
             <TileLayer
@@ -27,18 +31,7 @@ export default function TruckMap({ telemetry, label }) {
             </Marker>
           </MapContainer>
         ) : (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "100%",
-              color: "#475569",
-              background: "#f8fafc",
-            }}
-          >
-            GPS fix unavailable.
-          </div>
+          <div className="map-empty">Location will appear once GPS lock is available.</div>
         )}
       </div>
     </section>
