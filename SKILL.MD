@@ -1,31 +1,136 @@
 ---
-name: esp32s3-cargo-monitor
+name: smart-cargo-monitor-dual-esp32
 description: >
-  Full-stack IoT cargo monitoring system built on the ESP32-S3 N16R8. Use this
+  Enterprise-style smart cargo monitoring and logistics management system built
+  on a dual-ESP architecture: ESP32-S3 N16R8 sensor node inside the cargo
+  container and ESP32-WROOM-32/N4 gateway node inside the truck cabin. Use this
   skill whenever the user asks about any part of this project — firmware,
-  wiring, sensors, MQTT, backend, frontend, Docker, or debugging. Covers Phase 1
-  bench validation (Wi-Fi + local MQTT) through to Phase 3 MVP (4G LTE + MQTTS +
-  React dashboard). Trigger this skill for any question involving: ESP32-S3
-  cargo monitor, DHT22, MPU6050, KY-037, NEO-M8N GPS, Mosquitto broker, cargo
-  telemetry, vibration scoring, acoustic anomaly detection, SD card buffer,
-  Node.js telemetry API, Socket.io live dashboard, Leaflet GPS map, or the
+  wiring, ESP-NOW, GSM, GPS, MQTT, EMQX OSS, backend, frontend, Docker, or
+  debugging. Covers the current rapid MVP implementation using Arduino firmware,
+  SIM800L, NEO-M8N, AHT10, BMP180, MPU6050, MQ2, SD card logging, Node.js
+  backend, React dashboard, and Docker-based EMQX stack. Trigger this skill for
+  any question involving: Smart Cargo Monitoring System, ESP32-S3 N16R8,
+  ESP32-WROOM-32, ESP-NOW cargo telemetry, SIM800L Mobitel MQTT uplink,
+  NEO-M8N GPS, EMQX OSS, real-time cargo dashboard, container environmental
+  monitoring, truck cabin gateway, alert thresholds, SD offline logging, or the
   docker-compose stack for this project. Even if the user only mentions one
-  component (e.g. "fix my GPS code" or "why is my SD card failing"), use this
-  skill — it contains the authoritative pin assignments, payload schema, and
-  architectural decisions that must stay consistent across all components.
+  component (e.g. "fix my ESP-NOW code" or "why is SIM800L resetting"), use this
+  skill — it contains the authoritative hardware split, pin assignments, payload
+  schema, topic hierarchy, and implementation scope that must stay consistent
+  across all layers.
 ---
 
-# ESP32-S3 Acoustic Edge AI Cargo Monitor
+# Smart Cargo Monitoring System — Dual ESP32 Architecture
 
-End-to-end IIoT cargo monitoring system. Three deployment phases:
+Enterprise-style IoT cargo monitoring and logistics platform using:
 
-| Phase | Name | Connectivity | Power | Security |
-|-------|------|-------------|-------|----------|
-| 1 | Bench | Wi-Fi + local MQTT | USB 5V | No auth |
-| 2 | Prototype | 4G SIM7600 | 3.7V LiPo + bench supply | MQTT user/pass |
-| 3 | MVP | 4G + MQTTS | LiPo + MP1584 buck (IP67) | X.509 certs |
+- **ESP32-S3 N16R8** as the **container sensor node**
+- **ESP32-WROOM-32 / N4** as the **truck cabin gateway**
+- **ESP-NOW** between the two ESP devices
+- **SIM800L v2.2** + **NEO-M8N** on the cabin gateway
+- **EMQX OSS** as the MQTT broker
+- **Node.js + React + Docker** for platform software
 
-**Current status: Phase 1 complete and validated.**
+This skill replaces the old single-board Wi-Fi-only cargo monitor design.
+
+---
+
+## Current implementation mode
+
+### Current target: 48-hour MVP / demo-first build
+
+The project is currently being implemented under a short deadline. The success
+criteria are:
+
+1. Container node reads core sensors
+2. Container node logs to SD card
+3. Container node sends compact telemetry to cabin node using ESP-NOW
+4. Cabin node adds GPS location
+5. Cabin node publishes MQTT via SIM800L to EMQX OSS
+6. Backend receives data
+7. React dashboard shows live telemetry, map location, and alerts
+
+### Scope cuts for MVP
+These are intentionally deferred until the core system is stable:
+
+- Raw microphone streaming
+- Advanced AI/LLM processing
+- Full enterprise RBAC and tenant admin flows
+- TLS/client cert auth on device
+- Fully custom PCB production
+- Deep analytics/reporting pipeline
+
+---
+
+## Deployment phases
+
+| Phase | Name | Connectivity | Broker | Power | Security |
+|-------|------|-------------|--------|-------|----------|
+| 1 | Local MVP | ESP-NOW + GSM MQTT | EMQX OSS (Docker) | 12V battery + LM2596 buck | Basic MQTT auth |
+| 2 | Field Prototype | ESP-NOW + GSM MQTT | EMQX OSS | 12V battery + stable dual rails | MQTT auth + app ACLs |
+| 3 | Enhanced MVP | ESP-NOW + GSM + secure MQTT | EMQX OSS / cloud-hosted | hardened vehicle install | TLS + stronger topic isolation |
+
+**Current status: Phase 1 Local MVP in progress.**
+
+---
+
+## System architecture
+
+### 1) Container sensor node — ESP32-S3 N16R8
+Installed inside or near the cargo container.
+
+Responsibilities:
+- Read environmental and safety sensors
+- Detect simple local anomalies
+- Log data to SD card
+- Send compact telemetry packets to cabin gateway using ESP-NOW
+
+Connected modules:
+- AHT10
+- BMP180
+- MPU6050
+- MQ2 gas sensor
+- Standard SD card module
+- INMP441 microphone module (**deferred unless time permits**)
+
+### 2) Cabin gateway node — ESP32-WROOM-32 / N4
+Installed inside the truck driver cabin.
+
+Responsibilities:
+- Receive ESP-NOW telemetry from container node
+- Read truck location using NEO-M8N GPS
+- Publish combined payload to EMQX using SIM800L over GSM/GPRS
+- Handle reconnect and simple offline buffering
+
+Connected modules:
+- SIM800L v2.2 GSM module
+- NEO-M8N GPS module
+
+### 3) Platform software
+Runs in local Docker during MVP.
+
+Components:
+- EMQX OSS
+- Node.js backend
+- React frontend
+
+Responsibilities:
+- MQTT ingestion
+- Latest state persistence
+- Alert evaluation
+- Live dashboard and map
+- Multi-truck / multi-container extensibility
+
+---
+
+## Device identities
+
+### ESP-NOW peers
+- Container ESP32-S3 MAC: `AC:A7:04:27:BD:00`
+- Cabin ESP32 MAC: `EC:E3:34:23:43:24`
+
+These values are currently treated as the canonical peer identities for the MVP.
+If hardware changes, update this skill and the firmware together.
 
 ---
 
@@ -33,279 +138,195 @@ End-to-end IIoT cargo monitoring system. Three deployment phases:
 
 | Component | Model | Role |
 |-----------|-------|------|
-| MCU | ESP32-S3 N16R8 | Dual-core 240MHz, 16MB Flash, 8MB OPI PSRAM |
-| IMU | MPU6050 | 6-axis vibration RMS scoring |
-| Climate | DHT22 | Temp ±0.5°C, humidity |
-| Microphone | KY-037 | Analog (AO) + digital threshold (DO) output |
-| GPS | NEO-M8N | UART1, TinyGPS++, 4-decimal precision |
-| Storage | MicroSD (SPI) | Offline circular buffer — 1000 record limit |
-| Alert | Active buzzer | NPN-driven if >30mA draw |
+| Container MCU | ESP32-S3 N16R8 | Sensor node inside cargo container |
+| Gateway MCU | ESP32-WROOM-32 / N4 | Cabin gateway node |
+| Temp/Humidity | AHT10 | Environmental monitoring |
+| Pressure | BMP180 | Pressure monitoring |
+| Motion | MPU6050 | Tilt, shock, and motion detection |
+| Gas | MQ2 | Smoke/gas trend detection |
+| Storage | Standard SD card module | Local offline logging |
+| Microphone | INMP441 | Optional future acoustic feature extraction |
+| GPS | NEO-M8N | Truck location via UART |
+| GSM | SIM800L v2.2 | Cellular MQTT uplink |
+| Power | 12V battery + LM2596 buck converters | Vehicle power source |
 
-### Confirmed GPIO pinout (do NOT change without updating all layers)
+---
 
+## Power architecture
+
+### Canonical power plan
+Source:
+- 12V vehicle battery
+
+Rails:
+- **5V rail** from LM2596 for:
+  - ESP32 dev boards (via 5V/VIN as appropriate)
+  - SD card module
+  - MQ2 module if required by board
+  - other sensor modules as needed
+- **4.0V dedicated rail** from separate LM2596 for:
+  - SIM800L only
+
+Rules:
+- All grounds must be common
+- SIM800L must not share a weak rail with the ESP boards
+- Keep SIM800L power wires short and thick
+- Add bulk capacitor near SIM800L power input
+- Verify voltage with multimeter before powering modules
+
+### Known power risk
+If SIM800L resets, disconnects, or causes ESP brownouts:
+- check current capability
+- shorten supply wires
+- isolate GSM rail properly
+- add capacitor close to module
+
+---
+
+## Canonical GPIO pinout
+
+These are the **project-standard pin assignments**. Do not change without
+updating firmware and documentation together.
+
+---
+
+## ESP32-S3 N16R8 — container node pinout
+
+### I2C bus
 | GPIO | Signal | Module | Protocol | Notes |
 |------|--------|--------|----------|-------|
-| 4 | MIC_AO | KY-037 AO | ADC | Analog audio level |
-| 5 | MIC_DO | KY-037 DO | Digital in | Hardware threshold trigger |
-| 6 | DHT_DATA | DHT22 | 1-wire | 10kΩ pull-up to 3.3V required |
-| 7 | BUZZER | Active buzzer | Digital out | Via S8050 NPN + 1kΩ base resistor |
-| 8 | I2C_SDA | MPU6050 | I2C | 4.7kΩ pull-up to 3.3V |
-| 9 | I2C_SCL | MPU6050 | I2C | 4.7kΩ pull-up to 3.3V |
-| 10 | SD_CS | MicroSD | SPI | |
-| 11 | SD_MOSI | MicroSD | SPI | |
-| 12 | SD_MISO | MicroSD | SPI | |
-| 13 | SD_SCK | MicroSD | SPI | |
-| 18 | GPS_TX (UART1 TX) | NEO-M8N RX | UART1 9600 | |
-| 19 | GPS_RX (UART1 RX) | NEO-M8N TX | UART1 9600 | |
+| 8 | I2C_SDA | AHT10 / BMP180 / MPU6050 | I2C | Shared I2C bus |
+| 9 | I2C_SCL | AHT10 / BMP180 / MPU6050 | I2C | Shared I2C bus |
 
-**Phase 2 reserved — never use in Phase 1 firmware:**
-- GPIO 4 → SIM7600 PWRKEY (conflict with KY-037 AO — must remap mic before Phase 2)
-- GPIO 5 → SIM7600 RESET
-- GPIO 16 → SIM7600 UART2 RX
-- GPIO 17 → SIM7600 UART2 TX
+### Sensor / storage / optional audio
+| GPIO | Signal | Module | Protocol | Notes |
+|------|--------|--------|----------|-------|
+| 4 | MQ2_AO | MQ2 gas sensor | ADC | Raw gas level input |
+| 10 | SD_CS | SD card module | SPI | |
+| 11 | SD_MOSI | SD card module | SPI | |
+| 12 | SD_SCK | SD card module | SPI | |
+| 13 | SD_MISO | SD card module | SPI | |
+| 14 | I2S_WS | INMP441 | I2S | Optional / deferred |
+| 15 | I2S_BCLK | INMP441 | I2S | Optional / deferred |
+| 16 | I2S_SD | INMP441 | I2S | Optional / deferred |
 
-### Arduino IDE board settings for ESP32-S3 N16R8
+### Notes
+- AHT10 default I2C address: `0x38`
+- MPU6050 default I2C address: `0x68`
+- BMP180 default I2C address: `0x77`
+- No address conflict on the shared I2C bus
+- INMP441 is optional for MVP and should only be enabled after the core path is stable
 
+---
+
+## ESP32-WROOM-32 / N4 — cabin gateway pinout
+
+### GPS UART
+| GPIO | Signal | Module | Protocol | Notes |
+|------|--------|--------|----------|-------|
+| 16 | GPS_RX | NEO-M8N TX | UART2 RX | GPS data into ESP32 |
+| 17 | GPS_TX | NEO-M8N RX | UART2 TX | Usually optional |
+
+### SIM800L UART
+| GPIO | Signal | Module | Protocol | Notes |
+|------|--------|--------|----------|-------|
+| 26 | GSM_RX | SIM800L TX | UART1 RX | GSM data into ESP32 |
+| 27 | GSM_TX | SIM800L RX | UART1 TX | AT commands out |
+
+### Notes
+- ESP-NOW uses onboard Wi-Fi radio
+- Keep SIM800L physically separated from GPS antenna where possible
+- Test GPS near open sky or window; indoor no-fix is not always a code issue
+
+---
+
+## Arduino IDE settings
+
+### ESP32-S3 N16R8
 | Setting | Value |
 |---------|-------|
 | Board | ESP32S3 Dev Module |
-| Flash Size | 16MB (128Mb) |
-| Partition Scheme | Huge APP (3MB No OTA/1MB SPIFFS) |
-| PSRAM | **OPI PSRAM** ← critical, wrong value = boot hang |
-| USB CDC On Boot | Disabled |
-| Upload Mode | UART0 / Hardware CDC |
-| Flash Mode | QIO 80MHz |
+| Flash Size | 16MB |
+| PSRAM | OPI PSRAM |
 | CPU Frequency | 240MHz |
+| USB CDC On Boot | Disabled or per board behavior |
+| Partition Scheme | Huge APP or similar |
+| Flash Mode | QIO 80MHz |
+
+### ESP32-WROOM-32 / N4
+| Setting | Value |
+|---------|-------|
+| Board | ESP32 Dev Module |
+| Flash Size | 4MB |
+| Upload Speed | 115200 or stable board value |
+| CPU Frequency | 240MHz |
+| Partition Scheme | Default or Huge APP if needed |
 
 ---
 
-## Canonical JSON Telemetry Payload
-
-Every layer of the stack (firmware, MQTT, backend, frontend) uses this exact schema:
-
-```json
-{
-  "device_id": "ESP32-S3-BENCH-01",
-  "temp": 30.30,
-  "hum": 99.90,
-  "vib_score": 0,
-  "ac_alert": true,
-  "lat": 6.6896,
-  "lon": 80.0370,
-  "sd_status": "OK",
-  "ts": "2026-04-01T18:43:49Z"
-}
-```
-
-- All floats: 2 decimal places
-- GPS: 4 decimal places (Phase 1); truncate to 2 in Phase 2 to save cellular bytes
-- `ts`: ISO 8601 UTC from GPS clock; fallback to `1970-01-01T{millis/1000}Z` when no fix
-- `vib_score`: 0–100 integer (RMS normalised)
-- `ac_alert`: boolean
+## Firmware architecture
 
 ---
 
-## MQTT Architecture
+## Container node firmware
 
-### Topic hierarchy
-```
-logistics_co/{vehicle_id}/telemetry    ← QoS 1, all telemetry
-logistics_co/{vehicle_id}/alerts       ← QoS 2, retain=true, alert events only
-```
+**File suggestion:** `cargo_container_s3.ino`
 
-Example device: `logistics_co/truck_01/telemetry`
+### Required libraries
+- Wire
+- WiFi
+- esp_now
+- SPI
+- SD
+- Adafruit_AHTX0 (or equivalent AHT10 library)
+- Adafruit_BMP085 / BMP180 compatible library
+- Adafruit_MPU6050 (or equivalent)
+- driver/i2s or Arduino-compatible I2S support (**optional**)
 
-### Broker
+### Responsibilities
+1. Initialize I2C devices
+2. Read AHT10, BMP180, MPU6050, MQ2
+3. Compute simple motion values:
+   - tilt
+   - shock flag
+4. Log CSV/JSON line to SD
+5. Send compact telemetry struct to cabin node using ESP-NOW
+6. Retry / show send status over Serial
 
-**Phase 1:** Self-hosted Mosquitto 2.x via Docker on local network
-- Port 1883 (MQTT, authenticated)
-- Port 8883 (MQTTS/TLS, self-signed cert)
-- Port 9001 (WebSocket)
-- Users: `cargo_device` (publish), `cargo_dashboard` (subscribe)
-- Anonymous access: disabled
+### MVP telemetry cycle
+- Read sensors every 2–3 seconds
+- Write one SD log line
+- Send one compact ESP-NOW packet
 
-**Phase 3:** MQTTS port 8883 with X.509 mutual auth, unique cert per device
+### Optional later additions
+- INMP441 RMS / peak / anomaly features
+- local buffering of unsent packets
+- battery telemetry
+- tamper detection
 
-### Firmware MQTT credentials
+---
+
+## Cabin gateway firmware
+
+**File suggestion:** `cargo_gateway_esp32.ino`
+
+### Required libraries
+- WiFi
+- esp_now
+- TinyGSM
+- TinyGPSPlus
+- PubSubClient
+- ArduinoJson
+
+### Responsibilities
+1. Receive sensor packet from container node over ESP-NOW
+2. Read latest GPS location from NEO-M8N
+3. Connect to GSM/GPRS via SIM800L
+4. Publish combined JSON payload to EMQX
+5. Reconnect MQTT and GPRS if disconnected
+
+### Mobitel APN
 ```cpp
-#define MQTT_BROKER   "192.168.x.x"   // Docker host LAN IP
-#define MQTT_PORT     1883
-#define MQTT_USER     "cargo_device"
-#define MQTT_PASSWORD "your_password"
-```
-Connection call: `mqtt.connect(clientId, MQTT_USER, MQTT_PASSWORD)`
-
----
-
-## Firmware Architecture
-
-**File:** `cargo_monitor_phase1.ino`
-
-**Required libraries (Arduino Library Manager):**
-- DHT sensor library (Adafruit)
-- Adafruit Unified Sensor (Adafruit)
-- MPU6050 (Electronic Cats)
-- TinyGPS++ (Mikal Hart)
-- PubSubClient (Nick O'Leary)
-- ArduinoJson (Benoit Blanchon)
-- SD (built-in)
-
-**30-second duty cycle:**
-1. Wake / re-init buses
-2. Sample MPU6050 @ 1kHz (100 samples), KY-037, DHT22, GPS
-3. Compute vibration RMS → normalise 0–100
-4. Acoustic baseline vs spike ratio check + DO pin check
-5. Threshold gates (temp, acoustic)
-6. Build JSON payload
-7. SD log (if mounted)
-8. MQTT publish QoS 1 (or buffer to SD if offline)
-9. Flush SD buffer on reconnect
-
-### Sensor algorithms
-
-**Vibration RMS (MPU6050):**
-```
-rms = sqrt(mean(ax² + ay² + az²))   // raw /16384 → g
-score = clamp((rms - 1.0) / 2.0 * 100, 0, 100)
-```
-Score = 0 at rest (gravity = ~1g). Tap sensor to verify it rises.
-
-**Acoustic anomaly (KY-037):**
-- Phase A (256 samples): establish baseline ADC average
-- Phase B (256 samples): watch for spike > `ACOUSTIC_ALERT_RATIO × baseline`
-- Also triggers if DO pin is HIGH
-- Tune: rotate onboard pot clockwise to reduce DO sensitivity
-
-**GPS validation gates:**
-- `gps.location.isValid()` must be true
-- `gps.location.age()` must be < 5000ms
-- NMEA checksum verified by TinyGPS++ automatically
-
-### Calibration constants (tune per deployment)
-```cpp
-#define TEMP_ALERT_THRESHOLD   8.0f    // °C — pharma cold-chain
-// For bench testing in warm room use 40.0f
-
-#define ACOUSTIC_ALERT_RATIO   1.5f    // spike/baseline multiplier
-#define VIB_SAMPLE_COUNT       100     // MPU samples per cycle
-#define SD_MAX_RECORDS         1000    // circular buffer limit
-```
-
-### Known Phase 1 issues and fixes
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `ESP-ROM:esp32s3-20210327` then nothing | Wrong USB port or blank flash | Use UART port; hold BOOT + tap RESET then upload |
-| Serial stops after ROM line | PSRAM set to wrong type | Set PSRAM → OPI PSRAM in Arduino IDE |
-| DHT22 returns NaN | Missing 10kΩ pull-up | Add pull-up resistor DATA→3.3V |
-| KY-037 always TRIG | Pot sensitivity too high | Turn pot clockwise until DO goes LOW at room noise |
-| SD Card: FAIL | MOSI/MISO swapped or wrong format | Verify GPIO 11=MOSI 12=MISO; format card FAT32 |
-| Vib Score always 0 | Board is stationary | Correct — tap MPU6050 to verify it rises |
-| Temp alert in warm room | Threshold set to 8°C pharma mode | Change TEMP_ALERT_THRESHOLD to 40.0f for bench |
-
----
-
-## Backend (Node.js + Express + MongoDB)
-
-**Port:** 5000
-**DB:** MongoDB 7, collection `telemetry` and `alerts`
-
-### REST endpoints
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /api/auth/login | None | Returns JWT |
-| GET | /api/devices | JWT | All devices (super_admin) or assigned (client) |
-| GET | /api/telemetry/:device_id | JWT | Last 200 records; ?from=&to= |
-| GET | /api/telemetry/:device_id/latest | JWT | Single latest record |
-| GET | /api/alerts/:device_id | JWT | Alert history |
-
-### Alert thresholds (backend evaluation)
-```js
-temp > 8.0          → pharmaceutical alert
-ac_alert === true   → acoustic alert
-vib_score > 75      → vibration alert
-```
-
-### RBAC roles
-- `super_admin` — full fleet visibility
-- `client` — read-only, own shipment device IDs only
-
-### Socket.io events emitted
-```
-room: device_id
-  event "telemetry"  → full payload object
-  event "alert"      → { device_id, type, value, threshold, ts }
-```
-
----
-
-## Frontend (React 18 + Vite)
-
-**Port:** 80 (Nginx, proxies /api and /socket.io to backend:5000)
-
-### Pages
-- `/login` — JWT auth form
-- `/dashboard` — live status cards, alert banner, map, charts
-- `/alerts` — alert history table
-
-### Key libraries
-- `recharts` — temp/humidity/vibration time-series charts (last 200 points)
-- `react-leaflet` / `leaflet` — live GPS map with device marker
-- `socket.io-client` — real-time telemetry + alert toasts
-- `axios` — REST calls
-- `zustand` — global state (auth, selected device, telemetry buffer)
-
-### Live data flow
-1. On device select → fetch `/api/telemetry/:device_id` (200 points)
-2. Join Socket.io room for device_id
-3. On `telemetry` event → append to chart buffer, update status cards, update map marker
-4. On `alert` event → show toast + update alert banner
-
----
-
-## Docker Stack
-
-```
-docker-compose.yml
-├── mosquitto    — MQTT broker (ports 1883, 8883, 9001)
-├── mongodb      — MongoDB 7 (internal only, port 27017)
-├── backend      — Node.js Express (port 5000)
-└── frontend     — React via Nginx (port 80)
-```
-
-Nginx proxies:
-- `/api/*` → `http://backend:5000/api/*`
-- `/socket.io/*` → `http://backend:5000/socket.io/*`
-
-Environment variables (`.env`):
-```
-MQTT_BROKER=mosquitto
-MQTT_PORT=1883
-MQTT_USER=cargo_dashboard
-MQTT_PASSWORD=
-MONGO_URI=mongodb://mongodb:27017/cargo_monitor
-JWT_SECRET=
-```
-
----
-
-## Phase 2 Readiness Checklist (before adding SIM7600)
-
-- [ ] Remap KY-037 AO off GPIO 4 (→ any free ADC pin, e.g. GPIO 3)
-- [ ] Remap KY-037 DO off GPIO 5 (→ e.g. GPIO 46)
-- [ ] Wire SIM7600: TX2=GPIO17, RX2=GPIO16, PWRKEY=GPIO4, RESET=GPIO5
-- [ ] Add MP1584 buck converter: set to 4.0V for SIM7600 rail
-- [ ] Add 220µF + 100nF caps at SIM7600 VCC input
-- [ ] Switch MQTT to MQTTS port 8883 with user/pass auth
-- [ ] Update GPS precision: truncate lat/lon to 2 decimal places
-
-## Phase 3 Readiness Checklist (MVP)
-
-- [ ] Replace MQTT user/pass with X.509 mutual TLS certificates
-- [ ] Enable GZIP compression on SD card offline buffer
-- [ ] Implement "Burst-Resync" on reconnect (alerts first, then telemetry)
-- [ ] Seal unit in IP67 polycarbonate enclosure with cable glands
-- [ ] Add DS18B20 waterproof probe for liquid temperature (pharma)
-- [ ] Add SHA-256 hashing of critical payloads → TRACE Blockchain push
-- [ ] Verify external antenna: CSQ ≥ 18 (–77 dBm) inside sealed metal container
+const char apn[] = "mobitel";
+const char gprsUser[] = "";
+const char gprsPass[] = "";

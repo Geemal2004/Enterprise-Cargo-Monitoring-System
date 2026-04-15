@@ -1,25 +1,182 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* Custom scrollbar to keep layout clean */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+:root {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  color: #0f172a;
+  background: #f4f6f8;
 }
 
-/* Ensure map matches rounded soft container design */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #f4f6f8;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.muted {
+  color: #475569;
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #dbe2ea;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.status-badge.online {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.offline {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.card-value {
+  margin: 8px 0 2px;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.card-sub {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: 1.8fr 1fr;
+  gap: 12px;
+}
+
+.map-wrap {
+  height: 320px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
 .leaflet-container {
-    border-radius: 0.5rem;
-    z-index: 10;
+  width: 100%;
+  height: 100%;
+}
+
+.alerts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.alert-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 9px;
+}
+
+.alert-item.high,
+.alert-item.critical {
+  border-color: #fecaca;
+  background: #fff5f5;
+}
+
+.chart-wrap {
+  height: 260px;
+}
+
+.empty-state {
+  color: #475569;
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.label {
+  font-size: 0.85rem;
+  color: #334155;
+  margin-right: 6px;
+}
+
+.select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
+.error {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #9f1239;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 900px) {
+  .layout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell {
+    padding: 14px;
+  }
 }

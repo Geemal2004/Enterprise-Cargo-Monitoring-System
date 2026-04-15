@@ -1,99 +1,52 @@
 # ==============================================================================
-# ESP32-S3 Cargo Monitor - Phase 3 MVP Stack
+# Smart Cargo Monitoring Integration Stack
+# Services: backend + frontend only (EMQX Serverless remains external)
 # ==============================================================================
-version: '3.8'
 
 services:
-  # ----------------------------------------------------------------------------
-  # 1. Mosquitto MQTT Broker
-  # ----------------------------------------------------------------------------
-  mosquitto:
-    image: eclipse-mosquitto:2
-    container_name: mosquitto
-    restart: unless-stopped
-    ports:
-      - "1883:1883"   # Standard MQTT
-      - "8883:8883"   # MQTTS / TLS
-      - "9001:9001"   # WebSockets
-    volumes:
-      - ./mosquitto/config:/mosquitto/config
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
-      - ./mosquitto/certs:/mosquitto/certs
-    healthcheck:
-      # Simple TCP check using nc (netcat) which is available in alpine
-      test: ["CMD-SHELL", "nc -z localhost 1883 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ----------------------------------------------------------------------------
-  # 2. MongoDB Database
-  # ----------------------------------------------------------------------------
-  mongodb:
-    image: mongo:7
-    container_name: mongodb
-    restart: unless-stopped
-    # Port 27017 is NOT exported to the host, it's only available internally on the Docker network
-    expose:
-      - "27017"
-    volumes:
-      - mongo_data:/data/db
-    healthcheck:
-      # Ping the database using mongosh
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ----------------------------------------------------------------------------
-  # 3. Node.js Express Backend
-  # ----------------------------------------------------------------------------
   backend:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: backend
+    container_name: smart-cargo-backend
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "${BACKEND_PORT:-5000}:5000"
     environment:
-      - NODE_ENV=production
-      - PORT=5000
-      - MONGO_URI=${MONGO_URI}
-      - MQTT_BROKER=mqtt://mosquitto
-      - MQTT_PORT=1883
-      - MQTT_USER=${MQTT_USER}
-      - MQTT_PASSWORD=${MQTT_PASSWORD}
-      - JWT_SECRET=${JWT_SECRET}
-    depends_on:
-      mosquitto:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 5000
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
 
-  # ----------------------------------------------------------------------------
-  # 4. React Vite Frontend via Nginx
-  # ----------------------------------------------------------------------------
+      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST}
+      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT:-8883}
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      MQTT_CA_PATH: ${MQTT_CA_PATH:-}
+      MQTT_REJECT_UNAUTHORIZED: ${MQTT_REJECT_UNAUTHORIZED:-true}
+      MQTT_TOPIC_FILTER: ${MQTT_TOPIC_FILTER:-tenant/+/truck/+/container/+/telemetry}
+      MQTT_CLIENT_ID_PREFIX: ${MQTT_CLIENT_ID_PREFIX:-smart-cargo-backend}
+      MQTT_CONNECT_TIMEOUT_MS: ${MQTT_CONNECT_TIMEOUT_MS:-30000}
+      MQTT_RECONNECT_PERIOD_MS: ${MQTT_RECONNECT_PERIOD_MS:-5000}
+
+      OFFLINE_THRESHOLD_MS: ${OFFLINE_THRESHOLD_MS:-30000}
+      OFFLINE_SCAN_INTERVAL_MS: ${OFFLINE_SCAN_INTERVAL_MS:-5000}
+    volumes:
+      # Optional EMQX CA certificate mount:
+      # Place emqx-ca.crt inside the host folder configured by EMQX_CA_CERT_DIR.
+      - type: bind
+        source: ${EMQX_CA_CERT_DIR:-./certs}
+        target: /run/certs
+        read_only: true
+
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Build-time variables for Vite
-        # Routing relatively through Nginx's proxies avoiding hardcoded IPs
-        - VITE_API_URL=/api
-        - VITE_SOCKET_URL=/
-    container_name: frontend
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    container_name: smart-cargo-frontend
     restart: unless-stopped
-    ports:
-      - "80:80"
     depends_on:
       - backend
-
-# ------------------------------------------------------------------------------
-# Named Volumes (for data persistence)
-# ------------------------------------------------------------------------------
-volumes:
-  mongo_data:
-    name: cargo_mongo_data
+    ports:
+      - "${FRONTEND_PORT:-80}:80"

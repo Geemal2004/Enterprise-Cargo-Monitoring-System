@@ -1,29 +1,21 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import App from './App.jsx';
-import Login from './pages/Login.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import AlertsHistory from './pages/AlertsHistory.jsx';
-import Layout from './components/Layout.jsx';
-import { useStore } from './store/useStore.js';
-import './index.css';
+import React from "react";
+import ReactDOM from "react-dom/client";
+import L from "leaflet";
+import App from "./App";
+import "leaflet/dist/leaflet.css";
+import "./index.css";
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
-const ProtectedRoute = ({ children }) => {
-  const jwt = useStore(state => state.jwt);
-  if (!jwt) return <Navigate to="/login" replace />;
-  return <Layout>{children}</Layout>;
-};
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+});
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/alerts" element={<ProtectedRoute><AlertsHistory /></ProtectedRoute>} />
-      </Routes>
-    </BrowserRouter>
+    <App />
   </React.StrictMode>
 );

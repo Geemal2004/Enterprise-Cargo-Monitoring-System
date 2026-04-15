@@ -1,15 +1,19 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies first for better Docker layer caching
+# Install production dependencies first for better layer caching
 COPY package*.json ./
-RUN npm install --production
+RUN npm ci --omit=dev
 
-# Copy application source code
-COPY . .
+# Copy only runtime assets
+COPY src ./src
+COPY .env.example ./
+COPY README.md ./
+
+ENV NODE_ENV=production
+ENV PORT=5000
 
 EXPOSE 5000
 
-# Start server
 CMD ["npm", "start"]

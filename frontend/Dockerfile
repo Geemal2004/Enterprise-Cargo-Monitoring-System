@@ -1,24 +1,22 @@
-# Step 1: Build the React Application
-FROM node:18-alpine AS builder
+# Step 1: Build the React application
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 # Copy package info and install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
-# Build arguments mapped to Vite ENV variables
-ARG VITE_API_URL
-ARG VITE_SOCKET_URL
-ENV VITE_API_URL=$VITE_API_URL
-ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
+# Build argument mapped to Vite environment variable
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=${VITE_API_URL}
 
 # Copy source and build
 COPY . .
 RUN npm run build
 
 # Step 2: Serve via Nginx
-FROM nginx:alpine
+FROM nginx:1.27-alpine
 
 # Clear default html
 RUN rm -rf /usr/share/nginx/html/*
