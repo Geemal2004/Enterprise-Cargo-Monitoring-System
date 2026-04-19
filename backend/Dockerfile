@@ -2,12 +2,12 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install production dependencies first for better layer caching
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Copy only runtime assets
 COPY src ./src
+COPY migrations ./migrations
+COPY seeds ./seeds
 COPY .env.example ./
 COPY README.md ./
 

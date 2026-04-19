@@ -1,11 +1,63 @@
 const mqtt = require("mqtt");
-const { parseTelemetryTopic } = require("../utils/topicParser");
-const {
-  validateTelemetryPayload,
-  normalizeTelemetryPayload,
-} = require("../utils/payloadValidator");
+const { parseTelemetryTopic } = require("./topicParser");
 
-function createMqttConsumer(config, store, runtimeState) {
+function createConcurrentQueue(concurrency, onSizeChanged) {
+  const tasks = [];
+  let active = 0;
+
+  function size() {
+    return tasks.length + active;
+  }
+
+  function notify() {
+    if (typeof onSizeChanged === "function") {
+      onSizeChanged(size());
+    }
+  }
+
+  function drain() {
+    while (active < concurrency && tasks.length > 0) {
+      const task = tasks.shift();
+      active += 1;
+      notify();
+
+      Promise.resolve()
+        .then(task)
+        .catch(() => {
+          // Error handling is implemented by the task itself.
+        })
+        .finally(() => {
+          active -= 1;
+          notify();
+          drain();
+        });
+    }
+  }
+
+  function add(task) {
+    tasks.push(task);
+    notify();
+    drain();
+  }
+
+  return {
+    add,
+    size,
+  };
+}
+
+function createMqttConsumer(deps) {
+  const {
+    config,
+    logger,
+    runtimeState,
+    onTelemetryMessage,
+  } = deps;
+
+  if (!config.mqtt.host) {
+    throw new Error("Missing MQTT broker host. Set MQTT_BROKER_HOST or MQTT_BROKER_URL.");
+  }
+
   const options = {
     protocol: "mqtts",
     host: config.mqtt.host,
@@ -15,94 +67,99 @@ function createMqttConsumer(config, store, runtimeState) {
     reconnectPeriod: config.mqtt.reconnectPeriodMs,
     connectTimeout: config.mqtt.connectTimeoutMs,
     rejectUnauthorized: config.mqtt.rejectUnauthorized,
-    clientId: `${config.mqtt.clientIdPrefix}-${Math.random()
-      .toString(16)
-      .slice(2, 10)}`,
+    clientId: `${config.mqtt.clientIdPrefix}-${Math.random().toString(16).slice(2, 10)}`,
   };
 
   if (config.mqtt.ca) {
     options.ca = config.mqtt.ca;
   }
 
+  const queue = createConcurrentQueue(config.ingest.queueConcurrency, (current) => {
+    runtimeState.setMqttQueueBacklog(current);
+  });
+
   const client = mqtt.connect(options);
 
   client.on("connect", () => {
     runtimeState.markMqttConnected(config.mqtt.topicFilter);
-    console.log(
-      `[MQTT] Connected to ${config.mqtt.host}:${config.mqtt.port} over TLS`
-    );
+    logger.info("MQTT connected", {
+      host: config.mqtt.host,
+      port: config.mqtt.port,
+      topicFilter: config.mqtt.topicFilter,
+    });
 
     client.subscribe(config.mqtt.topicFilter, { qos: 1 }, (error) => {
       if (error) {
         runtimeState.markMqttError(error);
-        console.error("[MQTT] Subscribe failed", error.message);
+        logger.error("MQTT subscribe failed", { error: error.message });
         return;
       }
-      console.log(`[MQTT] Subscribed to ${config.mqtt.topicFilter}`);
+
+      logger.info("MQTT subscription active", {
+        topicFilter: config.mqtt.topicFilter,
+      });
     });
   });
 
   client.on("message", (topic, payloadBuffer) => {
-    const topicInfo = parseTelemetryTopic(topic);
-    if (!topicInfo) {
-      runtimeState.markMqttMessageRejected("topic_mismatch");
+    runtimeState.markMqttMessageReceived();
+
+    const backlog = queue.size();
+    if (backlog >= config.ingest.queueMaxBacklog) {
+      runtimeState.markMqttMessageRejected("ingest_queue_overflow");
+      logger.warn("Dropping telemetry due to ingest queue overflow", {
+        backlog,
+        maxBacklog: config.ingest.queueMaxBacklog,
+      });
       return;
     }
 
-    let parsedPayload;
-    try {
-      parsedPayload = JSON.parse(payloadBuffer.toString("utf8"));
-    } catch (error) {
-      runtimeState.markMqttMessageRejected("invalid_json");
-      return;
-    }
+    const payloadText = payloadBuffer.toString("utf8");
 
-    const validation = validateTelemetryPayload(parsedPayload);
-    if (!validation.valid) {
-      runtimeState.markMqttMessageRejected(
-        `invalid_payload:${validation.errors.join("|")}`
-      );
-      return;
-    }
+    queue.add(async () => {
+      try {
+        const topicInfo = parseTelemetryTopic(topic);
+        if (!topicInfo) {
+          runtimeState.markMqttMessageRejected("topic_mismatch");
+          return;
+        }
 
-    if (
-      parsedPayload.truckId &&
-      String(parsedPayload.truckId) !== String(topicInfo.truckId)
-    ) {
-      runtimeState.markMqttMessageRejected("truck_id_topic_mismatch");
-      return;
-    }
+        let parsedPayload;
+        try {
+          parsedPayload = JSON.parse(payloadText);
+        } catch (_error) {
+          runtimeState.markMqttMessageRejected("invalid_json");
+          return;
+        }
 
-    if (
-      parsedPayload.containerId &&
-      String(parsedPayload.containerId) !== String(topicInfo.containerId)
-    ) {
-      runtimeState.markMqttMessageRejected("container_id_topic_mismatch");
-      return;
-    }
-
-    const normalized = normalizeTelemetryPayload(topicInfo, parsedPayload);
-    store.upsert(normalized);
-    runtimeState.markMqttMessageAccepted();
+        await onTelemetryMessage(topicInfo, parsedPayload);
+      } catch (error) {
+        runtimeState.markMqttMessageRejected("ingest_processing_error");
+        logger.error("Telemetry processing failed", {
+          error: error.message,
+          topic,
+        });
+      }
+    });
   });
 
   client.on("reconnect", () => {
-    console.log("[MQTT] Reconnecting...");
+    logger.info("MQTT reconnecting");
   });
 
   client.on("close", () => {
     runtimeState.markMqttDisconnected();
-    console.log("[MQTT] Connection closed");
+    logger.warn("MQTT connection closed");
   });
 
   client.on("offline", () => {
     runtimeState.markMqttDisconnected();
-    console.log("[MQTT] Offline");
+    logger.warn("MQTT client offline");
   });
 
   client.on("error", (error) => {
     runtimeState.markMqttError(error);
-    console.error("[MQTT] Error", error.message);
+    logger.error("MQTT error", { error: error.message });
   });
 
   return {

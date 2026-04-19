@@ -5,15 +5,17 @@ description: >
   on a dual-ESP architecture: ESP32-S3 N16R8 sensor node inside the cargo
   container and ESP32-WROOM-32/N4 gateway node inside the truck cabin. Use this
   skill whenever the user asks about any part of this project — firmware,
-  wiring, ESP-NOW, GSM, GPS, MQTT, EMQX OSS, backend, frontend, Docker, or
-  debugging. Covers the current rapid MVP implementation using Arduino firmware,
-  SIM800L, NEO-M8N, AHT10, BMP180, MPU6050, MQ2, SD card logging, Node.js
-  backend, React dashboard, and Docker-based EMQX stack. Trigger this skill for
-  any question involving: Smart Cargo Monitoring System, ESP32-S3 N16R8,
+  wiring, ESP-NOW, GSM, GPS, MQTT, EMQX Serverless/OSS, Neon PostgreSQL,
+  backend, frontend, Docker, or debugging. Covers the current rapid MVP
+  implementation using Arduino firmware, SIM800L, NEO-M8N, AHT10, BMP180,
+  MPU6050, MQ2, SD card logging, Node.js backend, React dashboard, PostgreSQL
+  persistence, and Docker Compose app stack. Trigger this skill for any
+  question involving: Smart Cargo Monitoring System, ESP32-S3 N16R8,
   ESP32-WROOM-32, ESP-NOW cargo telemetry, SIM800L Mobitel MQTT uplink,
-  NEO-M8N GPS, EMQX OSS, real-time cargo dashboard, container environmental
-  monitoring, truck cabin gateway, alert thresholds, SD offline logging, or the
-  docker-compose stack for this project. Even if the user only mentions one
+  NEO-M8N GPS, EMQX Serverless, EMQX OSS, Neon DB, real-time cargo dashboard,
+  container environmental monitoring, truck cabin gateway, alert thresholds, SD
+  offline logging, or the docker-compose stack for this project. Even if the
+  user only mentions one
   component (e.g. "fix my ESP-NOW code" or "why is SIM800L resetting"), use this
   skill — it contains the authoritative hardware split, pin assignments, payload
   schema, topic hierarchy, and implementation scope that must stay consistent
@@ -28,8 +30,8 @@ Enterprise-style IoT cargo monitoring and logistics platform using:
 - **ESP32-WROOM-32 / N4** as the **truck cabin gateway**
 - **ESP-NOW** between the two ESP devices
 - **SIM800L v2.2** + **NEO-M8N** on the cabin gateway
-- **EMQX OSS** as the MQTT broker
-- **Node.js + React + Docker** for platform software
+- **EMQX Serverless (external)** as the current MQTT broker (EMQX OSS optional)
+- **Node.js + React + Docker + PostgreSQL (Neon)** for platform software
 
 This skill replaces the old single-board Wi-Fi-only cargo monitor design.
 
@@ -46,7 +48,7 @@ criteria are:
 2. Container node logs to SD card
 3. Container node sends compact telemetry to cabin node using ESP-NOW
 4. Cabin node adds GPS location
-5. Cabin node publishes MQTT via SIM800L to EMQX OSS
+5. Cabin node publishes MQTT via SIM800L to EMQX (Serverless/OSS)
 6. Backend receives data
 7. React dashboard shows live telemetry, map location, and alerts
 
@@ -66,11 +68,11 @@ These are intentionally deferred until the core system is stable:
 
 | Phase | Name | Connectivity | Broker | Power | Security |
 |-------|------|-------------|--------|-------|----------|
-| 1 | Local MVP | ESP-NOW + GSM MQTT | EMQX OSS (Docker) | 12V battery + LM2596 buck | Basic MQTT auth |
-| 2 | Field Prototype | ESP-NOW + GSM MQTT | EMQX OSS | 12V battery + stable dual rails | MQTT auth + app ACLs |
-| 3 | Enhanced MVP | ESP-NOW + GSM + secure MQTT | EMQX OSS / cloud-hosted | hardened vehicle install | TLS + stronger topic isolation |
+| 1 | Current MVP | ESP-NOW + GSM MQTT | EMQX Serverless (external) | 12V battery + LM2596 buck | MQTT auth + TLS to broker |
+| 2 | Local Lab Variant | ESP-NOW + GSM/Wi-Fi MQTT | EMQX OSS (Docker optional) | 12V battery + stable dual rails | MQTT auth + app ACLs |
+| 3 | Enhanced MVP | ESP-NOW + GSM + secure MQTT | EMQX Serverless or hosted EMQX OSS | hardened vehicle install | stronger topic isolation + TLS |
 
-**Current status: Phase 1 Local MVP in progress.**
+**Current status: Phase 1 Current MVP in progress.**
 
 ---
 
@@ -110,16 +112,19 @@ Connected modules:
 Runs in local Docker during MVP.
 
 Components:
-- EMQX OSS
-- Node.js backend
+- EMQX Serverless (external broker for current implementation)
+- Node.js backend (Express + pg + dotenv)
+- PostgreSQL (Neon managed database)
 - React frontend
+- Docker Compose (backend + frontend containers)
 
 Responsibilities:
 - MQTT ingestion
-- Latest state persistence
+- Latest state persistence in PostgreSQL
 - Alert evaluation
 - Live dashboard and map
 - Multi-truck / multi-container extensibility
+- Migration-based DB bootstrap
 
 ---
 
@@ -330,3 +335,168 @@ updating firmware and documentation together.
 const char apn[] = "mobitel";
 const char gprsUser[] = "";
 const char gprsPass[] = "";
+```
+
+### Gateway publish contract
+- Publish MQTT payloads on successful GSM + MQTT connection.
+- Preserve per-message sequence and source timestamp when available.
+- Prefer QoS 1 for telemetry delivery in mobile network conditions.
+- Continue reconnect loops for both GSM and MQTT when disconnected.
+
+---
+
+## Canonical MQTT topic and payload contract
+
+### Topic hierarchy
+
+Container telemetry must publish to:
+
+```text
+tenant/{tenantCode}/truck/{truckCode}/container/{containerCode}/telemetry
+```
+
+Backend default topic filter:
+
+```text
+tenant/+/truck/+/container/+/telemetry
+```
+
+### Minimum payload fields required by backend validator
+
+```json
+{
+  "seq": 123,
+  "sourceTs": "2026-04-19T00:00:00Z",
+  "env": {
+    "temperatureC": 28.6,
+    "humidityPct": 71.4,
+    "pressureHpa": 1008.2
+  },
+  "gas": {
+    "mq2Raw": 450,
+    "alert": false
+  },
+  "motion": {
+    "tiltDeg": 2.1,
+    "shock": false
+  },
+  "gps": {
+    "lat": 6.9271,
+    "lon": 79.8612,
+    "speedKph": 38.2,
+    "gpsFix": true
+  },
+  "status": {
+    "sdOk": true,
+    "gpsFix": true,
+    "uplink": "gsm"
+  }
+}
+```
+
+Validation-critical fields:
+- `env.temperatureC`
+- `gas.mq2Raw`
+- `motion.shock`
+
+---
+
+## Backend and Neon PostgreSQL baseline (current)
+
+### Backend stack
+- Node.js + Express
+- PostgreSQL via `pg`
+- Config via `dotenv`
+- Structured architecture:
+  - `config`, `db`, `mqtt`, `repositories`, `services`, `routes`, `middleware`, `utils`, `jobs`, `validators`
+
+### Database provider
+- Current managed DB target: Neon PostgreSQL.
+- Connection style: `DATABASE_URL` with SSL required.
+- Migration-based bootstrap is mandatory.
+- Canonical SQL source-of-truth:
+  - `database/schema.sql`
+  - `database/seed.sql`
+- Backend runtime mirror files:
+  - `backend/migrations/001_initial_schema.sql`
+  - `backend/seeds/001_demo_seed.sql`
+- Keep canonical and mirror files synchronized via:
+  - `scripts/sync-db-sql.ps1`
+  - `scripts/sync-db-sql.sh`
+
+### Core persistence flow
+1. Insert each accepted message into `telemetry_history`.
+2. Upsert latest state into `telemetry_latest`.
+3. Evaluate rules and create/update/resolve alerts in `alerts`.
+4. Write lifecycle events in `alert_events`.
+5. Record admin mutations in `audit_logs`.
+
+### Alert rules expected in runtime
+- `HIGH_TEMPERATURE`
+- `GAS_SPIKE`
+- `SHOCK_DETECTED`
+- `GPS_LOST`
+- `OFFLINE`
+
+---
+
+## Docker workflow (authoritative for this repo)
+
+### Current compose scope
+- `docker-compose.yml` currently runs only:
+  - `backend`
+  - `frontend`
+- EMQX is external in current runtime (Serverless endpoint).
+
+### Start stack with backend environment
+
+```bash
+docker compose up -d --build backend frontend
+```
+
+### Verify containers
+
+```bash
+docker compose ps
+```
+
+### Follow backend logs
+
+```bash
+docker compose logs -f backend
+```
+
+### Stop stack
+
+```bash
+docker compose down
+```
+
+### Important env note
+- Compose substitution reads repository root `.env`.
+- Root `.env` is canonical for Docker Compose runs.
+- `backend/.env` and `frontend/.env` are for standalone local service runs only.
+
+---
+
+## Runtime validation checklist
+
+1. `GET /api/health` returns:
+   - `status: ok`
+   - `runtime.db.healthy: true`
+   - `runtime.mqtt.connected: true`
+2. `GET /api/fleet/summary` returns non-error JSON.
+3. `GET /api/trucks/TRUCK01/containers/CONT01/latest` returns latest telemetry.
+4. Database shows rows in:
+   - `telemetry_history`
+   - `telemetry_latest`
+   - `alerts`
+   - `alert_events`
+
+---
+
+## Accuracy rule for future edits
+
+When project infra changes (broker host, DB provider, compose topology, topic path,
+or payload fields), update this skill file in the same change set as code/config.
+Treat this document as the cross-layer contract for firmware, backend, and frontend.

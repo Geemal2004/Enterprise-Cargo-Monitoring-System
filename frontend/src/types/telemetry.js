@@ -53,7 +53,45 @@ export function extractTelemetry(entry) {
   }
 
   if (entry.telemetry && typeof entry.telemetry === "object") {
-    return entry.telemetry;
+    const telemetry = entry.telemetry;
+    const env = telemetry.env && typeof telemetry.env === "object" ? telemetry.env : {};
+    const gas = telemetry.gas && typeof telemetry.gas === "object" ? telemetry.gas : {};
+    const motion = telemetry.motion && typeof telemetry.motion === "object" ? telemetry.motion : {};
+    const gps = telemetry.gps && typeof telemetry.gps === "object" ? telemetry.gps : {};
+    const status = telemetry.status && typeof telemetry.status === "object" ? telemetry.status : {};
+
+    return {
+      ...telemetry,
+      seq: asNumberOrNull(telemetry.seq) ?? telemetry.seq,
+      gps: {
+        ...gps,
+        lat: asNumberOrNull(gps.lat),
+        lon: asNumberOrNull(gps.lon),
+        speedKph: asNumberOrNull(gps.speedKph),
+      },
+      env: {
+        ...env,
+        temperatureC: asNumberOrNull(env.temperatureC),
+        humidityPct: asNumberOrNull(env.humidityPct),
+        pressureHpa: asNumberOrNull(env.pressureHpa),
+      },
+      gas: {
+        ...gas,
+        mq2Raw: asNumberOrNull(gas.mq2Raw),
+        alert: asBooleanOrNull(gas.alert) ?? Boolean(gas.alert),
+      },
+      motion: {
+        ...motion,
+        tiltDeg: asNumberOrNull(motion.tiltDeg),
+        shock: asBooleanOrNull(motion.shock) ?? Boolean(motion.shock),
+      },
+      status: {
+        ...status,
+        sdOk: asBooleanOrNull(status.sdOk),
+        gpsFix: asBooleanOrNull(status.gpsFix),
+        uplink: status.uplink ?? "unknown",
+      },
+    };
   }
 
   return {};
@@ -77,6 +115,37 @@ function asNumberOrNull(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
+
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function asBooleanOrNull(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "off"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+
   return null;
 }
 

@@ -5,9 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "Starting backend and frontend in local dev mode..."
-npm --prefix backend run dev &
+(cd backend && npm run dev) &
 BACKEND_PID=$!
-npm --prefix frontend run dev &
+(cd frontend && npm run dev) &
 FRONTEND_PID=$!
 
 cleanup() {

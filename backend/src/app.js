@@ -1,28 +1,23 @@
 const express = require("express");
 const cors = require("cors");
 const { createApiRoutes } = require("./routes");
+const { createRequestContextMiddleware } = require("./middleware/requestContext");
+const {
+  createErrorHandler,
+  createNotFoundMiddleware,
+} = require("./middleware/errorHandler");
 
-function createApp(config, store, runtimeState) {
+function createApp(config, logger, services, runtimeState) {
   const app = express();
 
   app.use(cors({ origin: config.cors.origin }));
+  app.use(createRequestContextMiddleware(logger));
   app.use(express.json({ limit: "1mb" }));
 
-  app.use("/api", createApiRoutes(store, runtimeState));
+  app.use(config.server.apiPrefix, createApiRoutes(services, config, runtimeState));
 
-  app.use((req, res) => {
-    res.status(404).json({
-      message: "Route not found",
-    });
-  });
-
-  app.use((err, req, res, next) => {
-    console.error("[API] Unhandled error", err);
-    res.status(500).json({
-      message: "Internal server error",
-      detail: config.nodeEnv === "production" ? undefined : err.message,
-    });
-  });
+  app.use(createNotFoundMiddleware());
+  app.use(createErrorHandler(config, logger));
 
   return app;
 }

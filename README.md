@@ -23,6 +23,31 @@ Frontend calls a simple API base URL:
 - Docker: /api (proxied by Nginx to backend:5000)
 - Local dev: http://localhost:5000/api
 
+## Environment file ownership
+
+- Root `.env`:
+   - Canonical env source for `docker-compose.yml`.
+   - Contains backend runtime variables used in containerized runs.
+   - Includes required JWT variables (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`).
+- Root `.env.example`:
+   - Template for root `.env`.
+- `backend/.env` and `backend/.env.example`:
+   - Used only for standalone backend runs (`cd backend && npm run dev`).
+- `frontend/.env` and `frontend/.env.example`:
+   - Used only for standalone frontend Vite runs (`cd frontend && npm run dev`).
+
+## SQL source of truth
+
+- Canonical schema and seed files are:
+   - `database/schema.sql`
+   - `database/seed.sql`
+- Backend keeps mirrored runtime copies for migration tooling and container packaging:
+   - `backend/migrations/001_initial_schema.sql`
+   - `backend/seeds/001_demo_seed.sql`
+- Sync mirrors from canonical source:
+   - PowerShell: `./scripts/sync-db-sql.ps1`
+   - Bash: `./scripts/sync-db-sql.sh`
+
 ## EMQX CA certificate mount (backend container)
 
 docker-compose.yml mounts a host directory into backend:
@@ -86,7 +111,11 @@ Download the EMQX CA certificate and save it as:
    - MQTT_BROKER_PORT
    - MQTT_USERNAME
    - MQTT_PASSWORD
-3. If using CA mount, set:
+3. Fill JWT values in .env:
+   - JWT_ACCESS_SECRET (>= 32 chars)
+   - JWT_REFRESH_SECRET (>= 32 chars)
+   - Optional: JWT_ACCESS_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN
+4. If using CA mount, set:
    - MQTT_CA_PATH=/run/certs/emqx-ca.crt
 
 ### 4) Start backend
@@ -122,9 +151,11 @@ Flash container and gateway firmware with matching IDs/topic and EMQX credential
 1. Confirm gateway logs show successful MQTT publish.
 2. Check backend health:
    - GET http://localhost:5000/api/health
-3. Check latest telemetry:
+3. Authenticate and capture token:
+   - POST http://localhost:5000/api/auth/login
+4. Check latest telemetry with bearer token:
    - GET http://localhost:5000/api/latest
-4. Open frontend dashboard:
+5. Open frontend dashboard:
    - http://localhost
 
 ## One-command helper usage

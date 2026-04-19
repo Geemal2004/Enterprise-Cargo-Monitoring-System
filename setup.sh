@@ -12,6 +12,21 @@ if ! grep -q "MQTT_BROKER_HOST=" .env; then
 	exit 1
 fi
 
+if ! grep -q "DATABASE_URL=" .env; then
+	echo "DATABASE_URL must be set in .env"
+	exit 1
+fi
+
+if ! grep -q "JWT_ACCESS_SECRET=" .env; then
+	echo "JWT_ACCESS_SECRET must be set in .env"
+	exit 1
+fi
+
+if ! grep -q "JWT_REFRESH_SECRET=" .env; then
+	echo "JWT_REFRESH_SECRET must be set in .env"
+	exit 1
+fi
+
 echo "2. Starting backend and frontend containers..."
 docker compose up -d
 

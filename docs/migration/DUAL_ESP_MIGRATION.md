@@ -97,7 +97,7 @@ Compatibility note:
 │           └── useStore.js
 ├── docker-compose.yml
 ├── setup.sh
-└── .env.template
+└── .env.example
 ```
 
 ## 5. Breaking changes
@@ -124,7 +124,7 @@ Compatibility note:
 ## 6. Changed files summary
 
 - `docker-compose.yml`
-- `.env.template`
+- `.env.example`
 - `.gitignore`
 - `setup.sh`
 - `backend/.env.example`

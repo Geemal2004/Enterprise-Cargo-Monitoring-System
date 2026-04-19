@@ -12,9 +12,9 @@ function parseTelemetryTopic(topic) {
   }
 
   return {
-    tenantId: match[1],
-    truckId: match[2],
-    containerId: match[3],
+    tenantCode: match[1],
+    truckCode: match[2],
+    containerCode: match[3],
     topic,
   };
 }

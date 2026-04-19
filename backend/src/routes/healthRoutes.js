@@ -1,15 +1,14 @@
 const express = require("express");
 
-function createHealthRoutes(store, runtimeState) {
+function createHealthRoutes(runtimeState) {
   const router = express.Router();
 
   router.get("/", (req, res) => {
     const runtime = runtimeState.snapshot();
-    const healthy = runtime.mqtt.connected;
+    const status = runtime.db.healthy && runtime.mqtt.connected ? "ok" : "degraded";
 
     res.status(200).json({
-      status: healthy ? "ok" : "degraded",
-      trackedDevices: store.size(),
+      status,
       runtime,
     });
   });
