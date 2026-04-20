@@ -42,3 +42,36 @@ export async function resetAdminUserPassword(userId, newPassword) {
   });
   return response.data;
 }
+
+export async function fetchFleetManagers(params = {}) {
+  const response = await apiClient.get(`/admin/fleet-managers${toQueryString(params)}`);
+  return response.data;
+}
+
+export async function fetchAssignablePairs(params = {}) {
+  const response = await apiClient.get(
+    `/admin/fleet-manager-assignments/assignable${toQueryString(params)}`
+  );
+  return response.data;
+}
+
+export async function fetchFleetManagerAssignments(params = {}) {
+  const response = await apiClient.get(
+    `/admin/fleet-manager-assignments${toQueryString(params)}`
+  );
+  return response.data;
+}
+
+export async function createFleetManagerAssignment(payload) {
+  const response = await apiClient.post("/admin/fleet-manager-assignments", payload);
+  return response.data;
+}
+
+export async function endFleetManagerAssignment(assignmentId, payload = {}) {
+  const encodedId = encodeURIComponent(assignmentId);
+  const response = await apiClient.post(
+    `/admin/fleet-manager-assignments/${encodedId}/end`,
+    payload
+  );
+  return response.data;
+}
