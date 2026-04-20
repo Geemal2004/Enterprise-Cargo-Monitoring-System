@@ -160,6 +160,7 @@ async function upsertTelemetryLatest(client, telemetry) {
 async function getLatestSnapshot(pool, options = {}) {
   const tenantCode = options.tenantCode || null;
   const limit = options.limit || 2000;
+  const managerUserId = options.managerUserId || null;
 
   const result = await pool.query(
     `
@@ -181,18 +182,24 @@ async function getLatestSnapshot(pool, options = {}) {
       LEFT JOIN fleets f
         ON f.id = tl.fleet_id
        AND f.tenant_id = tl.tenant_id
+      LEFT JOIN fleet_manager_assignments fma
+        ON fma.tenant_id = tl.tenant_id
+       AND fma.container_id = tl.container_id
+       AND fma.status = 'ACTIVE'
+       AND fma.unassigned_at IS NULL
       WHERE ($1::text IS NULL OR t.tenant_code = $1)
+        AND ($3::uuid IS NULL OR fma.manager_user_id = $3)
       ORDER BY tl.received_at DESC
       LIMIT $2
     `,
-    [tenantCode, limit]
+    [tenantCode, limit, managerUserId]
   );
 
   return result.rows;
 }
 
 async function getLatestByCodes(pool, identifiers) {
-  const { tenantCode = null, truckCode, containerCode } = identifiers;
+  const { tenantCode = null, truckCode, containerCode, managerUserId = null } = identifiers;
 
   const result = await pool.query(
     `
@@ -214,13 +221,19 @@ async function getLatestByCodes(pool, identifiers) {
       LEFT JOIN fleets f
         ON f.id = tl.fleet_id
        AND f.tenant_id = tl.tenant_id
+      LEFT JOIN fleet_manager_assignments fma
+        ON fma.tenant_id = tl.tenant_id
+       AND fma.container_id = tl.container_id
+       AND fma.status = 'ACTIVE'
+       AND fma.unassigned_at IS NULL
       WHERE tr.truck_code = $1
         AND c.container_code = $2
         AND ($3::text IS NULL OR t.tenant_code = $3)
+        AND ($4::uuid IS NULL OR fma.manager_user_id = $4)
       ORDER BY tl.received_at DESC
       LIMIT 1
     `,
-    [truckCode, containerCode, tenantCode]
+    [truckCode, containerCode, tenantCode, managerUserId]
   );
 
   return result.rows[0] || null;
@@ -235,6 +248,7 @@ async function getHistoryByCodes(pool, options) {
     to = null,
     limit = 240,
     interval = null,
+    managerUserId = null,
   } = options;
 
   if (interval) {
@@ -267,16 +281,22 @@ async function getHistoryByCodes(pool, options) {
         JOIN containers c
           ON c.id = th.container_id
          AND c.tenant_id = th.tenant_id
+        LEFT JOIN fleet_manager_assignments fma
+          ON fma.tenant_id = th.tenant_id
+         AND fma.container_id = th.container_id
+         AND fma.status = 'ACTIVE'
+         AND fma.unassigned_at IS NULL
         WHERE tr.truck_code = $1
           AND c.container_code = $2
           AND ($3::text IS NULL OR t.tenant_code = $3)
           AND ($4::timestamptz IS NULL OR th.occurred_at >= $4)
           AND ($5::timestamptz IS NULL OR th.occurred_at <= $5)
+          AND ($7::uuid IS NULL OR fma.manager_user_id = $7)
         GROUP BY bucket_at
         ORDER BY bucket_at ASC
-        LIMIT $7
+        LIMIT $8
       `,
-      [truckCode, containerCode, tenantCode, from, to, interval, limit]
+      [truckCode, containerCode, tenantCode, from, to, interval, managerUserId, limit]
     );
 
     return aggregated.rows;
@@ -300,17 +320,23 @@ async function getHistoryByCodes(pool, options) {
         JOIN containers c
           ON c.id = th.container_id
          AND c.tenant_id = th.tenant_id
+        LEFT JOIN fleet_manager_assignments fma
+          ON fma.tenant_id = th.tenant_id
+         AND fma.container_id = th.container_id
+         AND fma.status = 'ACTIVE'
+         AND fma.unassigned_at IS NULL
         WHERE tr.truck_code = $1
           AND c.container_code = $2
           AND ($3::text IS NULL OR t.tenant_code = $3)
           AND ($4::timestamptz IS NULL OR th.occurred_at >= $4)
           AND ($5::timestamptz IS NULL OR th.occurred_at <= $5)
+          AND ($7::uuid IS NULL OR fma.manager_user_id = $7)
         ORDER BY th.occurred_at DESC
         LIMIT $6
       ) latest_window
       ORDER BY occurred_at ASC
     `,
-    [truckCode, containerCode, tenantCode, from, to, limit]
+    [truckCode, containerCode, tenantCode, from, to, limit, managerUserId]
   );
 
   return result.rows;
@@ -348,31 +374,49 @@ async function findOfflineCandidates(pool, thresholdMs, tenantCode = null, limit
   return result.rows;
 }
 
-async function getFleetSummary(pool, thresholdMs, tenantCode = null) {
+async function getFleetSummary(pool, thresholdMs, tenantCode = null, managerUserId = null) {
   const result = await pool.query(
     `
       WITH scoped_trucks AS (
-        SELECT tr.id
+        SELECT DISTINCT tr.id
         FROM trucks tr
         JOIN tenants t
           ON t.id = tr.tenant_id
+        LEFT JOIN fleet_manager_assignments fma
+          ON fma.tenant_id = tr.tenant_id
+         AND fma.truck_id = tr.id
+         AND fma.status = 'ACTIVE'
+         AND fma.unassigned_at IS NULL
         WHERE tr.is_active = TRUE
           AND ($1::text IS NULL OR t.tenant_code = $1)
+          AND ($2::uuid IS NULL OR fma.manager_user_id = $2)
       ),
       latest_scope AS (
         SELECT tl.*
         FROM telemetry_latest tl
         JOIN tenants t
           ON t.id = tl.tenant_id
+        LEFT JOIN fleet_manager_assignments fma
+          ON fma.tenant_id = tl.tenant_id
+         AND fma.container_id = tl.container_id
+         AND fma.status = 'ACTIVE'
+         AND fma.unassigned_at IS NULL
         WHERE ($1::text IS NULL OR t.tenant_code = $1)
+          AND ($2::uuid IS NULL OR fma.manager_user_id = $2)
       ),
       active_alerts AS (
         SELECT a.*
         FROM alerts a
         JOIN tenants t
           ON t.id = a.tenant_id
+        LEFT JOIN fleet_manager_assignments fma
+          ON fma.tenant_id = a.tenant_id
+         AND fma.container_id = a.container_id
+         AND fma.status = 'ACTIVE'
+         AND fma.unassigned_at IS NULL
         WHERE a.status IN ('OPEN', 'ACKNOWLEDGED')
           AND ($1::text IS NULL OR t.tenant_code = $1)
+          AND ($2::uuid IS NULL OR fma.manager_user_id = $2)
       ),
       severity_counts AS (
         SELECT severity, COUNT(*)::int AS count
@@ -384,7 +428,7 @@ async function getFleetSummary(pool, thresholdMs, tenantCode = null) {
         (
           SELECT COUNT(DISTINCT truck_id)::int
           FROM latest_scope ls
-          WHERE (EXTRACT(EPOCH FROM (NOW() - ls.received_at)) * 1000) <= $2
+          WHERE (EXTRACT(EPOCH FROM (NOW() - ls.received_at)) * 1000) <= $3
         ) AS online_trucks,
         (SELECT COUNT(*)::int FROM active_alerts) AS active_alerts,
         (
@@ -397,13 +441,13 @@ async function getFleetSummary(pool, thresholdMs, tenantCode = null) {
         COALESCE((SELECT count FROM severity_counts WHERE severity = 'WARNING'), 0)::int AS warning_alerts,
         COALESCE((SELECT count FROM severity_counts WHERE severity = 'CRITICAL'), 0)::int AS critical_alerts
     `,
-    [tenantCode, thresholdMs]
+    [tenantCode, managerUserId, thresholdMs]
   );
 
   return result.rows[0];
 }
 
-async function listFleetUnits(pool, thresholdMs, tenantCode = null, limit = 2000) {
+async function listFleetUnits(pool, thresholdMs, tenantCode = null, limit = 2000, managerUserId = null) {
   const result = await pool.query(
     `
       SELECT
@@ -435,6 +479,11 @@ async function listFleetUnits(pool, thresholdMs, tenantCode = null, limit = 2000
       LEFT JOIN fleets f
         ON f.id = tl.fleet_id
        AND f.tenant_id = tl.tenant_id
+      LEFT JOIN fleet_manager_assignments fma
+        ON fma.tenant_id = tl.tenant_id
+       AND fma.container_id = tl.container_id
+       AND fma.status = 'ACTIVE'
+       AND fma.unassigned_at IS NULL
       LEFT JOIN LATERAL (
         SELECT
           COUNT(*)::int AS active_alerts,
@@ -453,10 +502,11 @@ async function listFleetUnits(pool, thresholdMs, tenantCode = null, limit = 2000
           AND a.status IN ('OPEN', 'ACKNOWLEDGED')
       ) aa ON TRUE
       WHERE ($1::text IS NULL OR t.tenant_code = $1)
+        AND ($4::uuid IS NULL OR fma.manager_user_id = $4)
       ORDER BY tl.received_at DESC
       LIMIT $3
     `,
-    [tenantCode, thresholdMs, limit]
+    [tenantCode, thresholdMs, limit, managerUserId]
   );
 
   return result.rows;

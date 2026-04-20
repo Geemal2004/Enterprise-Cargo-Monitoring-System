@@ -15,13 +15,28 @@ function createTelemetryRoutes(services, config) {
 
   router.use(requireTelemetryRead);
 
+  function resolveManagerScope(req) {
+    if (req.auth?.isSuperAdmin) {
+      return null;
+    }
+
+    const roles = (req.auth?.roles || []).map((role) => String(role).toLowerCase());
+    if (roles.includes("admin") || roles.includes("tenant_admin")) {
+      return null;
+    }
+
+    return roles.includes("fleet_manager") ? req.auth.id : null;
+  }
+
   async function sendUnitHistory(req, res, truckId, containerId) {
     const query = parseHistoryQuery(req.query, config);
     const tenantCode = req.context.tenantCode || null;
+    const managerUserId = resolveManagerScope(req);
 
     const history = await services.fleetService.getHistoryForUnit(truckId, containerId, {
       ...query,
       tenantCode,
+      managerUserId,
     });
 
     res.status(200).json(history);
@@ -31,7 +46,10 @@ function createTelemetryRoutes(services, config) {
     "/latest",
     asyncHandler(async (req, res) => {
       const tenantCode = req.context.tenantCode || null;
-      const payload = await services.fleetService.getLatestSnapshot(tenantCode);
+      const payload = await services.fleetService.getLatestSnapshot(
+        tenantCode,
+        resolveManagerScope(req)
+      );
       res.status(200).json(payload);
     })
   );
@@ -43,7 +61,8 @@ function createTelemetryRoutes(services, config) {
       const payload = await services.fleetService.getLatestForUnit(
         req.params.truckId,
         req.params.containerId,
-        tenantCode
+        tenantCode,
+        resolveManagerScope(req)
       );
       res.status(200).json(payload);
     })
@@ -56,7 +75,8 @@ function createTelemetryRoutes(services, config) {
       const payload = await services.fleetService.getLatestForUnit(
         req.params.truckId,
         req.params.containerId,
-        tenantCode
+        tenantCode,
+        resolveManagerScope(req)
       );
       res.status(200).json(payload);
     })

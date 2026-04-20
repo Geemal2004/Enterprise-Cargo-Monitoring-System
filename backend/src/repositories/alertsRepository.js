@@ -226,6 +226,29 @@ async function listAlerts(pool, filters = {}) {
   return result.rows;
 }
 
+async function getAlertSummaryByTrip(pool, input) {
+  const result = await pool.query(
+    `
+      SELECT severity, COUNT(*)::int AS count
+      FROM alerts
+      WHERE tenant_id = $1
+        AND trip_id = $2
+      GROUP BY severity
+    `,
+    [input.tenantId, input.tripId]
+  );
+
+  const bySeverity = {};
+  let total = 0;
+
+  for (const row of result.rows) {
+    bySeverity[row.severity] = row.count;
+    total += row.count;
+  }
+
+  return { count: total, bySeverity };
+}
+
 async function listAlertHistory(pool, filters = {}) {
   const tenantCode = filters.tenantCode || null;
   const tenantId = filters.tenantId || null;
@@ -330,5 +353,6 @@ module.exports = {
   insertAlertEvent,
   listAlerts,
   listAlertHistory,
+  getAlertSummaryByTrip,
   getAlertEvents,
 };
