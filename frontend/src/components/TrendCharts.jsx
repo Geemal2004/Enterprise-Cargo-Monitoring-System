@@ -1,33 +1,53 @@
 import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
-function tooltipFormatter(value, name) {
+const chartConfigs = [
+  {
+    key: "temperatureC",
+    name: "Temperature (C)",
+    color: "#dc2626",
+    unit: " C",
+  },
+  {
+    key: "humidityPct",
+    name: "Humidity (%)",
+    color: "#0284c7",
+    unit: " %",
+  },
+  {
+    key: "pressureHpa",
+    name: "Pressure (hPa)",
+    color: "#4f46e5",
+    unit: " hPa",
+  },
+  {
+    key: "gasRaw",
+    name: "Gas Level",
+    color: "#d97706",
+    unit: "",
+  },
+];
+
+function formatValue(value, unit, decimals = 1) {
   if (typeof value !== "number") {
-    return ["-", name];
+    return "-";
   }
 
-  if (name.includes("Temperature")) {
-    return [`${value.toFixed(1)} C`, name];
-  }
-  if (name.includes("Humidity")) {
-    return [`${value.toFixed(1)} %`, name];
-  }
-  if (name.includes("Pressure")) {
-    return [`${value.toFixed(1)} hPa`, name];
-  }
-  if (name.includes("Gas")) {
-    return [`${Math.round(value)}`, name];
-  }
-
-  return [value, name];
+  const formatted = unit ? value.toFixed(decimals) : Math.round(value).toString();
+  return `${formatted}${unit}`;
 }
 
 export default function TrendCharts({ points, hasBackendHistory, loading }) {
@@ -47,34 +67,102 @@ export default function TrendCharts({ points, hasBackendHistory, loading }) {
       ) : null}
 
       {!loading && points && points.length > 1 ? (
-        <div className="chart-wrap-lg">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={points} margin={{ top: 16, right: 16, left: 0, bottom: 6 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e3eaf2" />
-              <XAxis dataKey="label" minTickGap={28} stroke="#64748b" tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="left" stroke="#64748b" tick={{ fontSize: 11 }} width={42} />
-              <YAxis yAxisId="right" orientation="right" stroke="#64748b" tick={{ fontSize: 11 }} width={46} />
-              <YAxis yAxisId="gas" hide />
-              <Tooltip
-                formatter={tooltipFormatter}
-                contentStyle={{
-                  borderRadius: 10,
-                  border: "1px solid #dbe2ea",
-                  boxShadow: "0 6px 20px rgba(15, 23, 42, 0.10)",
-                }}
-              />
-              <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: "12px", paddingBottom: "4px" }} />
-              <Line yAxisId="left" type="monotone" dataKey="temperatureC" name="Temperature (C)" stroke="#dc2626" strokeWidth={2} dot={false} />
-              <Line yAxisId="left" type="monotone" dataKey="humidityPct" name="Humidity (%)" stroke="#0284c7" strokeWidth={2} dot={false} />
-              <Line yAxisId="right" type="monotone" dataKey="pressureHpa" name="Pressure (hPa)" stroke="#4f46e5" strokeWidth={2} dot={false} />
-              <Line yAxisId="gas" type="monotone" dataKey="gasRaw" name="Gas Level" stroke="#d97706" strokeWidth={2} strokeDasharray="5 4" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ) : null}
+        <div className="trend-grid">
+          {chartConfigs.map((config) => (
+            <div key={config.key} className="trend-card">
+              <div className="trend-header">
+                <h4>{config.name}</h4>
+                <span className="trend-dot" style={{ background: config.color }} />
+              </div>
+              <div className="trend-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  {config.key === "humidityPct" ? (
+                    <AreaChart data={points} margin={{ top: 12, right: 12, left: 0, bottom: 6 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e3eaf2" />
+                      <XAxis dataKey="label" minTickGap={30} stroke="#64748b" tick={{ fontSize: 10 }} />
+                      <YAxis stroke="#64748b" tick={{ fontSize: 10 }} width={40} />
+                      <Tooltip
+                        formatter={(value) => [formatValue(value, config.unit), config.name]}
+                        contentStyle={{
+                          borderRadius: 10,
+                          border: "1px solid #dbe2ea",
+                          boxShadow: "0 6px 20px rgba(15, 23, 42, 0.10)",
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey={config.key}
+                        name={config.name}
+                        stroke={config.color}
+                        fill={`${config.color}33`}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </AreaChart>
+                  ) : null}
 
-      {!loading && points && points.length > 1 ? (
-        <p className="chart-footnote">Pressure and gas lines use independent scaling for clearer trend comparison.</p>
+                  {config.key === "pressureHpa" ? (
+                    <ScatterChart data={points} margin={{ top: 12, right: 12, left: 0, bottom: 6 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e3eaf2" />
+                      <XAxis dataKey="label" type="category" minTickGap={30} stroke="#64748b" tick={{ fontSize: 10 }} />
+                      <YAxis dataKey={config.key} stroke="#64748b" tick={{ fontSize: 10 }} width={40} />
+                      <Tooltip
+                        formatter={(value) => [formatValue(value, config.unit), config.name]}
+                        contentStyle={{
+                          borderRadius: 10,
+                          border: "1px solid #dbe2ea",
+                          boxShadow: "0 6px 20px rgba(15, 23, 42, 0.10)",
+                        }}
+                      />
+                      <Scatter name={config.name} data={points} dataKey={config.key} fill={config.color} />
+                    </ScatterChart>
+                  ) : null}
+
+                  {config.key === "gasRaw" ? (
+                    <BarChart data={points} margin={{ top: 12, right: 12, left: 0, bottom: 6 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e3eaf2" />
+                      <XAxis dataKey="label" minTickGap={30} stroke="#64748b" tick={{ fontSize: 10 }} />
+                      <YAxis stroke="#64748b" tick={{ fontSize: 10 }} width={40} />
+                      <Tooltip
+                        formatter={(value) => [formatValue(value, config.unit, 0), config.name]}
+                        contentStyle={{
+                          borderRadius: 10,
+                          border: "1px solid #dbe2ea",
+                          boxShadow: "0 6px 20px rgba(15, 23, 42, 0.10)",
+                        }}
+                      />
+                      <Bar dataKey={config.key} name={config.name} fill={config.color} radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  ) : null}
+
+                  {config.key === "temperatureC" ? (
+                    <LineChart data={points} margin={{ top: 12, right: 12, left: 0, bottom: 6 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e3eaf2" />
+                      <XAxis dataKey="label" minTickGap={30} stroke="#64748b" tick={{ fontSize: 10 }} />
+                      <YAxis stroke="#64748b" tick={{ fontSize: 10 }} width={40} />
+                      <Tooltip
+                        formatter={(value) => [formatValue(value, config.unit), config.name]}
+                        contentStyle={{
+                          borderRadius: 10,
+                          border: "1px solid #dbe2ea",
+                          boxShadow: "0 6px 20px rgba(15, 23, 42, 0.10)",
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey={config.key}
+                        name={config.name}
+                        stroke={config.color}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </LineChart>
+                  ) : null}
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : null}
     </section>
   );

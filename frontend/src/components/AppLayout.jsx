@@ -16,43 +16,50 @@ export default function AppLayout() {
   const { user, logout, hasAnyRole } = useAuthContext();
 
   const canManageUsers = hasAnyRole(["super_admin", "tenant_admin", "admin"]);
+  const canManageAssignments = hasAnyRole(["super_admin"]);
+  const canViewTrips = hasAnyRole(["super_admin", "tenant_admin", "admin", "fleet_manager"]);
   const primaryRole = user?.roles?.[0] || "viewer";
 
   return (
     <div className="portal-shell">
-      <header className="portal-header">
-        <div>
-          <p className="eyebrow">Operations Console</p>
-          <h1 className="portal-title">Smart Cargo Monitoring</h1>
-          <p className="portal-subtitle">
-            Fleet visibility, risk monitoring, and container condition in one workspace.
-          </p>
-        </div>
-        <div className="header-actions">
-          <div className="header-meta">
-            <span className="meta-label">Signed in as</span>
-            <strong>{user?.fullName || user?.email || "User"}</strong>
-            <span className="meta-label">{primaryRole}</span>
+      <div className="portal-layout">
+        <aside className="sidebar">
+          <div className="sidebar-brand">
+            <p className="eyebrow">Operations Console</p>
+            <h1 className="portal-title">Smart Cargo</h1>
+            <p className="portal-subtitle">Monitoring Workspace</p>
           </div>
-          <div className="header-meta">
-            <span className="meta-label">Last refresh</span>
-            <strong>{formatDateTime(lastUpdated)}</strong>
+          <nav className="sidebar-nav">
+            <NavItem to="/fleet" label="Fleet Overview" />
+            <NavItem to="/analytics" label="Analytics" />
+            <NavItem to="/alerts" label="Alerts" />
+            {canViewTrips ? <NavItem to="/trips" label="Trips" /> : null}
+            {canManageUsers ? <NavItem to="/admin/users" label="User Management" /> : null}
+            {canManageAssignments ? (
+              <NavItem to="/admin/fleet-manager-assignments" label="Fleet Manager Assignments" />
+            ) : null}
+          </nav>
+          <div className="sidebar-meta">
+            <div>
+              <span className="meta-label">Signed in as</span>
+              <strong>{user?.fullName || user?.email || "User"}</strong>
+              <span className="meta-label">{primaryRole}</span>
+            </div>
+            <div>
+              <span className="meta-label">Last refresh</span>
+              <strong>{formatDateTime(lastUpdated)}</strong>
+            </div>
+            <button className="table-action" type="button" onClick={logout}>
+              Sign out
+            </button>
           </div>
-          <button className="table-action" type="button" onClick={logout}>
-            Sign out
-          </button>
-        </div>
-      </header>
-
-      <nav className="nav-bar panel-surface">
-        <NavItem to="/fleet" label="Fleet Overview" />
-        <NavItem to="/alerts" label="Alerts" />
-        {canManageUsers ? <NavItem to="/admin/users" label="User Management" /> : null}
-      </nav>
-
-      <section className="page-content">
-        <Outlet />
-      </section>
+        </aside>
+        <main className="content-area">
+          <section className="page-content">
+            <Outlet />
+          </section>
+        </main>
+      </div>
     </div>
   );
 }
