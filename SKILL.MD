@@ -500,3 +500,4 @@ docker compose down
 When project infra changes (broker host, DB provider, compose topology, topic path,
 or payload fields), update this skill file in the same change set as code/config.
 Treat this document as the cross-layer contract for firmware, backend, and frontend.
+
