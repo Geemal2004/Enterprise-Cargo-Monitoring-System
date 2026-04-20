@@ -128,6 +128,76 @@ function createAdminRoutes(services) {
     })
   );
 
+  router.get(
+    "/fleet-managers",
+    requireSuperAdmin,
+    asyncHandler(async (req, res) => {
+      const items = await services.adminService.listFleetManagers(
+        req.query || {},
+        requestAuditContext(req)
+      );
+      res.status(200).json({
+        count: items.length,
+        items,
+      });
+    })
+  );
+
+  router.get(
+    "/fleet-manager-assignments/assignable",
+    requireSuperAdmin,
+    asyncHandler(async (req, res) => {
+      const items = await services.adminService.listAssignablePairs(
+        req.query || {},
+        requestAuditContext(req)
+      );
+      res.status(200).json({
+        count: items.length,
+        items,
+      });
+    })
+  );
+
+  router.get(
+    "/fleet-manager-assignments",
+    requireSuperAdmin,
+    asyncHandler(async (req, res) => {
+      const items = await services.adminService.listFleetManagerAssignments(
+        req.query || {},
+        requestAuditContext(req)
+      );
+      res.status(200).json({
+        count: items.length,
+        items,
+      });
+    })
+  );
+
+  router.post(
+    "/fleet-manager-assignments",
+    requireSuperAdmin,
+    asyncHandler(async (req, res) => {
+      const created = await services.adminService.createFleetManagerAssignment(
+        req.body,
+        requestAuditContext(req)
+      );
+      res.status(201).json(created);
+    })
+  );
+
+  router.post(
+    "/fleet-manager-assignments/:id/end",
+    requireSuperAdmin,
+    asyncHandler(async (req, res) => {
+      const updated = await services.adminService.endFleetManagerAssignment(
+        req.params.id,
+        req.body,
+        requestAuditContext(req)
+      );
+      res.status(200).json(updated);
+    })
+  );
+
   return router;
 }
 

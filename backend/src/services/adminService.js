@@ -83,6 +83,26 @@ function assertRoleAssignmentAllowed(context, roleCodes) {
   }
 }
 
+function coerceAssignmentStatus(raw) {
+  if (raw === undefined || raw === null || raw === "") {
+    return null;
+  }
+
+  const normalized = String(raw).toUpperCase();
+  if (!["ACTIVE", "ENDED"].includes(normalized)) {
+    throw new AppError("status must be ACTIVE or ENDED", 400);
+  }
+  return normalized;
+}
+
+function resolveTenantCode(context, inputTenantCode) {
+  const tenantCode = String(inputTenantCode || context?.actorTenantCode || "").trim();
+  if (!tenantCode) {
+    throw new AppError("tenantCode is required", 400);
+  }
+  return tenantCode;
+}
+
 function createAdminService(deps) {
   const { pool, adminRepository, auditRepository } = deps;
 
@@ -343,6 +363,175 @@ function createAdminService(deps) {
     });
   }
 
+  async function listFleetManagers(query, context) {
+    const tenantCode = resolveTenantCode(context, query.tenantCode);
+    assertTenantAccess(context, tenantCode);
+
+    return adminRepository.listFleetManagers(pool, {
+      tenantCode,
+      limit: Math.min(Number(query.limit) || 500, 2000),
+    });
+  }
+
+  async function listAssignablePairs(query, context) {
+    const tenantCode = resolveTenantCode(context, query.tenantCode);
+    assertTenantAccess(context, tenantCode);
+
+    return adminRepository.listAssignablePairs(pool, {
+      tenantCode,
+      limit: Math.min(Number(query.limit) || 500, 2000),
+    });
+  }
+
+  async function listFleetManagerAssignments(query, context) {
+    const tenantCode = resolveTenantCode(context, query.tenantCode);
+    assertTenantAccess(context, tenantCode);
+    const status = coerceAssignmentStatus(query.status);
+
+    return adminRepository.listFleetManagerAssignments(pool, {
+      tenantCode,
+      status,
+      limit: Math.min(Number(query.limit) || 500, 2000),
+    });
+  }
+
+  async function createFleetManagerAssignment(input, context) {
+    if (!input || typeof input !== "object") {
+      throw new AppError("Request body must be a JSON object", 400);
+    }
+
+    const tenantCode = resolveTenantCode(context, input.tenantCode);
+    const truckId = String(input.truckId || "").trim();
+    const containerId = String(input.containerId || "").trim();
+    const managerUserId = String(input.managerUserId || "").trim();
+    const notes = input.notes ? String(input.notes) : null;
+
+    if (!truckId || !containerId || !managerUserId) {
+      throw new AppError("truckId, containerId, and managerUserId are required", 400);
+    }
+
+    const tenant = await adminRepository.findTenantByCode(pool, tenantCode);
+    if (!tenant) {
+      throw new AppError("Tenant not found", 404);
+    }
+    if (!tenant.is_active) {
+      throw new AppError("Tenant is inactive", 403, {
+        code: "TENANT_INACTIVE",
+      });
+    }
+
+    assertTenantAccess(context, tenant.tenant_code);
+
+    return withTransaction(pool, async (client) => {
+      const manager = await adminRepository.getUserById(client, managerUserId);
+      if (!manager) {
+        throw new AppError("Fleet manager not found", 404);
+      }
+      if (manager.tenant_id !== tenant.id) {
+        throw new AppError("Fleet manager does not belong to tenant", 400);
+      }
+      const roleCodes = normalizeRoleCodes(manager.roles);
+      if (!roleCodes.includes("fleet_manager")) {
+        throw new AppError("Selected user is not a fleet manager", 400);
+      }
+      if (!manager.is_active || String(manager.status).toUpperCase() !== "ACTIVE") {
+        throw new AppError("Fleet manager account is disabled", 400);
+      }
+
+      const activePair = await adminRepository.getActiveTruckContainerAssignment(client, {
+        tenantId: tenant.id,
+        truckId,
+        containerId,
+      });
+      if (!activePair) {
+        throw new AppError("Active truck/container assignment not found", 404);
+      }
+
+      let created;
+      try {
+        created = await adminRepository.createFleetManagerAssignment(client, {
+          tenantId: tenant.id,
+          truckId,
+          containerId,
+          managerUserId,
+          assignedByUserId: context.actorUserId,
+          notes,
+        });
+      } catch (error) {
+        if (error && error.code === "23505") {
+          throw new AppError("Container already assigned to a fleet manager", 409);
+        }
+        throw error;
+      }
+
+      await auditRepository.insertAuditLog(client, {
+        tenantId: tenant.id,
+        actorUserId: context.actorUserId,
+        action: "FLEET_MANAGER_ASSIGNMENT_CREATE",
+        targetType: "fleet_manager_assignment",
+        targetId: created.id,
+        metadata: {
+          truckId,
+          containerId,
+          managerUserId,
+          notes,
+        },
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      });
+
+      return created;
+    });
+  }
+
+  async function endFleetManagerAssignment(assignmentId, input, context) {
+    if (!assignmentId) {
+      throw new AppError("assignmentId is required", 400);
+    }
+
+    const payload = input && typeof input === "object" ? input : {};
+    const notes = payload.notes ? String(payload.notes) : null;
+
+    return withTransaction(pool, async (client) => {
+      const existing = await adminRepository.getFleetManagerAssignmentById(client, assignmentId);
+      if (!existing) {
+        throw new AppError("Assignment not found", 404);
+      }
+
+      assertTenantAccess(context, existing.tenant_code);
+
+      if (existing.status !== "ACTIVE" || existing.unassigned_at) {
+        throw new AppError("Assignment is already ended", 409);
+      }
+
+      const updated = await adminRepository.endFleetManagerAssignment(client, assignmentId, {
+        notes,
+      });
+
+      if (!updated) {
+        throw new AppError("Assignment not found", 404);
+      }
+
+      await auditRepository.insertAuditLog(client, {
+        tenantId: existing.tenant_id,
+        actorUserId: context.actorUserId,
+        action: "FLEET_MANAGER_ASSIGNMENT_END",
+        targetType: "fleet_manager_assignment",
+        targetId: existing.id,
+        metadata: {
+          managerUserId: existing.manager_user_id,
+          containerId: existing.container_id,
+          truckId: existing.truck_id,
+          notes,
+        },
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      });
+
+      return updated;
+    });
+  }
+
   return {
     listTenants,
     listRoles,
@@ -352,6 +541,11 @@ function createAdminService(deps) {
     resetUserPassword,
     listDeviceRegistry,
     listAuditLogs,
+    listFleetManagers,
+    listAssignablePairs,
+    listFleetManagerAssignments,
+    createFleetManagerAssignment,
+    endFleetManagerAssignment,
   };
 }
 
