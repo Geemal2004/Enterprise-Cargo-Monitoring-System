@@ -45,10 +45,11 @@ function mapLatestRowToApi(row) {
 function createFleetService(deps) {
   const { config, telemetryRepository } = deps;
 
-  async function getLatestSnapshot(tenantCode = null) {
+  async function getLatestSnapshot(tenantCode = null, managerUserId = null) {
     const rows = await telemetryRepository.getLatestSnapshot(deps.pool, {
       tenantCode,
       limit: config.query.historyMaxLimit,
+      managerUserId,
     });
 
     const items = rows.map(mapLatestRowToApi);
@@ -64,11 +65,12 @@ function createFleetService(deps) {
     };
   }
 
-  async function getFleetSummary(tenantCode = null) {
+  async function getFleetSummary(tenantCode = null, managerUserId = null) {
     const summary = await telemetryRepository.getFleetSummary(
       deps.pool,
       config.alerts.offlineThresholdMs,
-      tenantCode
+      tenantCode,
+      managerUserId
     );
 
     return {
@@ -85,21 +87,29 @@ function createFleetService(deps) {
     };
   }
 
-  async function getFleetUnits(tenantCode = null) {
+  async function getFleetUnits(tenantCode = null, managerUserId = null) {
     const rows = await telemetryRepository.listFleetUnits(
       deps.pool,
       config.alerts.offlineThresholdMs,
-      tenantCode
+      tenantCode,
+      config.query.historyMaxLimit,
+      managerUserId
     );
 
     return rows.map(mapLatestRowToApi);
   }
 
-  async function getLatestForUnit(truckCode, containerCode, tenantCode = null) {
+  async function getLatestForUnit(
+    truckCode,
+    containerCode,
+    tenantCode = null,
+    managerUserId = null
+  ) {
     const row = await telemetryRepository.getLatestByCodes(deps.pool, {
       tenantCode,
       truckCode,
       containerCode,
+      managerUserId,
     });
 
     if (!row) {
@@ -118,6 +128,7 @@ function createFleetService(deps) {
       to: options.to,
       limit: options.limit,
       interval: options.interval,
+      managerUserId: options.managerUserId || null,
     });
 
     const items = rows.map((row) => {
