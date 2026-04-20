@@ -10,6 +10,7 @@ const { createAlertsRoutes } = require("./alertsRoutes");
 const { createReportsRoutes } = require("./reportsRoutes");
 const { createHealthRoutes } = require("./healthRoutes");
 const { createAdminRoutes } = require("./adminRoutes");
+const { createTripsRoutes } = require("./tripsRoutes");
 
 function createApiRoutes(services, config, runtimeState) {
   const router = express.Router();
@@ -24,6 +25,7 @@ function createApiRoutes(services, config, runtimeState) {
   router.use("/", createTelemetryRoutes(services, config));
   router.use("/fleet", createFleetRoutes(services));
   router.use("/alerts", createAlertsRoutes(services));
+  router.use("/trips", createTripsRoutes(services));
   router.use("/reports", createReportsRoutes(services));
   router.use("/admin", createAdminRoutes(services));
 

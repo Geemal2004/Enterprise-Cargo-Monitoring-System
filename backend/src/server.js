@@ -13,6 +13,7 @@ const { createAlertsService } = require("./services/alertsService");
 const { createReportsService } = require("./services/reportsService");
 const { createAdminService } = require("./services/adminService");
 const { createAuthService } = require("./services/authService");
+const { createTripsService } = require("./services/tripsService");
 const { startOfflineScannerJob } = require("./jobs/offlineScannerJob");
 const telemetryRepository = require("./repositories/telemetryRepository");
 const assetRepository = require("./repositories/assetRepository");
@@ -22,6 +23,7 @@ const reportsRepository = require("./repositories/reportsRepository");
 const adminRepository = require("./repositories/adminRepository");
 const authRepository = require("./repositories/authRepository");
 const auditRepository = require("./repositories/auditRepository");
+const tripsRepository = require("./repositories/tripsRepository");
 const telemetryValidator = require("./validators/telemetryValidator");
 
 async function main() {
@@ -117,6 +119,12 @@ async function main() {
         pool,
         config,
         reportsRepository,
+      }),
+      tripsService: createTripsService({
+        pool,
+        tripsRepository,
+        assetRepository,
+        auditRepository,
       }),
       adminService: createAdminService({
         pool,
