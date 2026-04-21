@@ -38,8 +38,23 @@ function toLatLon(value) {
   return parsed;
 }
 
+function normalizeCargoType(raw) {
+  return String(raw || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function createTripsService(deps) {
-  const { pool, tripsRepository, assetRepository, auditRepository } = deps;
+  const {
+    pool,
+    tripsRepository,
+    assetRepository,
+    auditRepository,
+    alertsRepository,
+    tripSummaryAiService,
+  } = deps;
 
   async function listTrips(query, context) {
     const tenantCode = context?.tenantCode || null;
@@ -69,6 +84,8 @@ function createTripsService(deps) {
     const containerCode = String(input.containerCode || "").trim();
     const originName = String(input.originName || "").trim();
     const destinationName = String(input.destinationName || "").trim();
+    const cargoTypeInput = String(input.cargoType || "").trim();
+    const goodsDescription = String(input.goodsDescription || "").trim();
 
     if (!truckCode || !containerCode) {
       throw new AppError("truckCode and containerCode are required", 400);
@@ -77,6 +94,18 @@ function createTripsService(deps) {
     if (!originName || !destinationName) {
       throw new AppError("originName and destinationName are required", 400);
     }
+
+    if (!cargoTypeInput) {
+      throw new AppError("cargoType is required", 400);
+    }
+
+    const cargoProfile = tripSummaryAiService?.resolveCargoProfile
+      ? tripSummaryAiService.resolveCargoProfile(cargoTypeInput)
+      : {
+          code: normalizeCargoType(cargoTypeInput) || "GENERAL_CARGO",
+          label: cargoTypeInput,
+          prioritySignals: ["temperature", "humidity", "gas", "shock", "gps_fix"],
+        };
 
     const originLat = toLatLon(input.originLat);
     const originLon = toLatLon(input.originLon);
@@ -144,6 +173,12 @@ function createTripsService(deps) {
               lat: destinationLat,
               lon: destinationLon,
             },
+            cargo: {
+              cargoType: cargoProfile.code,
+              cargoLabel: cargoProfile.label,
+              goodsDescription: goodsDescription || null,
+              prioritySignals: cargoProfile.prioritySignals,
+            },
           },
         });
       } catch (error) {
@@ -166,6 +201,8 @@ function createTripsService(deps) {
             containerCode,
             originName,
             destinationName,
+            cargoType: cargoProfile.code,
+            goodsDescription: goodsDescription || null,
           },
           ipAddress: context?.ipAddress || null,
           userAgent: context?.userAgent || null,
@@ -267,6 +304,52 @@ function createTripsService(deps) {
         throw new AppError("Trip not found", 404);
       }
 
+      const metadata =
+        existing.metadata_json && typeof existing.metadata_json === "object"
+          ? existing.metadata_json
+          : {};
+      const cargo = metadata.cargo || {
+        cargoType: "GENERAL_CARGO",
+        cargoLabel: "General cargo",
+        goodsDescription: null,
+        prioritySignals: ["temperature", "humidity", "gas", "shock", "gps_fix"],
+      };
+
+      const metrics = await tripsRepository.getTripTelemetryAggregate(client, {
+        tenantId: existing.tenant_id,
+        tripId: existing.id,
+      });
+
+      const alertSummary = alertsRepository
+        ? await alertsRepository.getAlertSummaryByTrip(client, {
+            tenantId: existing.tenant_id,
+            tripId: existing.id,
+          })
+        : { count: 0, bySeverity: {} };
+
+      let finalTrip = updated;
+      if (tripSummaryAiService?.generateTripSummary) {
+        const aiSummary = await tripSummaryAiService.generateTripSummary({
+          cargoType: cargo.cargoType,
+          goodsDescription: cargo.goodsDescription || null,
+          metrics,
+          alertSummary,
+        });
+
+        const patched = await tripsRepository.updateTripMetadata(client, {
+          tripId: existing.id,
+          tenantId: existing.tenant_id,
+          patch: {
+            aiSummary,
+            cargo,
+          },
+        });
+
+        if (patched) {
+          finalTrip = patched;
+        }
+      }
+
       if (auditRepository) {
         await auditRepository.insertAuditLog(client, {
           tenantId: existing.tenant_id,
@@ -276,13 +359,14 @@ function createTripsService(deps) {
           targetId: existing.id,
           metadata: {
             tripCode: existing.trip_code,
+            cargoType: cargo.cargoType,
           },
           ipAddress: context?.ipAddress || null,
           userAgent: context?.userAgent || null,
         });
       }
 
-      return updated;
+      return finalTrip;
     });
   }
 

@@ -1,0 +1,41 @@
+graph TD
+    subgraph Edge["Firmware (IoT Edge Environment)"]
+        CN["Container Node<br>(ESP32 / Edge Sensors)"]
+        GN["Gateway Node<br>(Truck Mount, ESP32)"]
+    end
+
+    subgraph Cloud["Cloud Infrastructure"]
+        Broker{"EMQX Serverless<br>MQTT Broker"}
+        DB[("Neon Serverless<br>PostgreSQL DB")]
+    end
+
+    subgraph App["Application Layer"]
+        BE["Backend Services<br>(Application Logic)"]
+        FE["Frontend Application<br>(Web Dashboard)"]
+    end
+
+    %% Edge Communications
+    CN -- " ESP-NOW<br>(Low Power/Latency) " --> GN
+
+    %% Edge to Cloud
+    GN == " MQTTS (TLS 1.2)<br>Telemetry & Alerts " ==> Broker
+
+    %% Cloud backend integration
+    Broker -- " MQTT / WebHooks " --> BE
+    BE -- " SQL over TLS " --> DB
+
+    %% App interactions
+    FE -- " REST / WebSocket (HTTPS) " --> BE
+    Broker -. " WebSocket (Optional Live Telemetry) " .-> FE
+    
+    %% Styles
+    classDef edgeStyle fill:#e0f2f1,stroke:#00796b,stroke-width:2px,color:#004d40;
+    classDef cloudStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
+    classDef dbStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100;
+    classDef appStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#4a148c;
+    classDef default fill:#fff,stroke:#333,stroke-width:1px;
+
+    class CN,GN edgeStyle;
+    class Broker cloudStyle;
+    class DB dbStyle;
+    class BE,FE appStyle;

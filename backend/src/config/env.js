@@ -208,6 +208,16 @@ const config = {
     historyDefaultLimit: readNumber("HISTORY_DEFAULT_LIMIT", 240),
     historyMaxLimit: readNumber("HISTORY_MAX_LIMIT", 2000),
   },
+  ai: {
+    tripSummaryEnabled: readBool("AI_TRIP_SUMMARY_ENABLED", true),
+    geminiModel: readString("GEMINI_MODEL", "gemini-flash-lite-latest"),
+    geminiApiBaseUrl: readString(
+      "GEMINI_API_BASE_URL",
+      "https://generativelanguage.googleapis.com/v1beta"
+    ),
+    geminiApiKeyBase64: readString("GEMINI_API_KEY_BASE64", ""),
+    tripSummaryTimeoutMs: readNumber("AI_TRIP_SUMMARY_TIMEOUT_MS", 15000),
+  },
 };
 
 module.exports = { config };

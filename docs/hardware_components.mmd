@@ -1,0 +1,50 @@
+graph TD
+    %% Hardware Component Diagram
+    
+    subgraph Container Node [Cargo Container Node]
+        direction TB
+        BPI["Banana Pi BPI-Nano (ESP32-S3)<br/>Main Controller"]
+        
+        subgraph Sensors [I2C & Analog Sensors]
+            AHT10["AHT10 Sensor<br/>(Temperature & Humidity)"]
+            BMP180["BMP180 Sensor<br/>(Barometric Pressure)"]
+            MPU6050["MPU6050 Module<br/>(Shock & Tilt)"]
+            MQ2["MQ2 Sensor<br/>(Gas/Smoke - Analog)"]
+            INMP["INMP441 Mic<br/>(Deferred)"]
+        end
+        
+        SD["MicroSD Card Module<br/>(SPI Logging)"]
+        Antenna1(("ESP-NOW WiFi<br/>Transceiver"))
+
+        AHT10 -- "I2C (SDA=8, SCL=9)" --> BPI
+        BMP180 -- "I2C" --> BPI
+        MPU6050 -- "I2C" --> BPI
+        MQ2 -- "Analog (Pin 4)" --> BPI
+        BPI == "SPI (Pins 10-13)" ==> SD
+        BPI <--> Antenna1
+    end
+
+    subgraph Gateway Node [Truck Gateway Node]
+        direction TB
+        ESP32["ESP32-WROOM-32<br/>Main Controller"]
+        MODEM["SIM800L Module<br/>(GSM/LTE Backhaul)"]
+        GPS["GPS Module<br/>(NEO-6M NMEA)"]
+        Antenna2(("ESP-NOW WiFi<br/>Receiver"))
+        
+        ESP32 <--> Antenna2
+        GPS -- "UART2 (RX=27, TX=26)" --> ESP32
+        ESP32 -- "UART1 (RX=16, TX=17)" --> MODEM
+    end
+
+    Antenna1 == "Wireless Telemetry<br/>(Local Wireless Link)" === Antenna2
+
+    %% Styling
+    classDef mcu fill:#e1bee7,stroke:#8e24aa,stroke-width:2px;
+    classDef sens fill:#c8e6c9,stroke:#388e3c,stroke-width:2px;
+    classDef module fill:#b3e5fc,stroke:#1976d2,stroke-width:2px;
+    classDef wireless fill:#ffcc80,stroke:#f57c00,stroke-width:2px;
+    
+    class BPI,ESP32 mcu;
+    class AHT10,BMP180,MPU6050,MQ2,INMP sens;
+    class SD,MODEM,GPS module;
+    class Antenna1,Antenna2 wireless;

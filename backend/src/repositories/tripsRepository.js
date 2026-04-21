@@ -201,6 +201,55 @@ async function completeTrip(executor, input) {
   return result.rows[0] || null;
 }
 
+async function getTripTelemetryAggregate(executor, input) {
+  const result = await executor.query(
+    `
+      SELECT
+        COUNT(*)::int AS sample_count,
+        MIN(occurred_at) AS first_point_at,
+        MAX(occurred_at) AS last_point_at,
+        MIN(temperature_c) AS temperature_min,
+        AVG(temperature_c) AS temperature_avg,
+        MAX(temperature_c) AS temperature_max,
+        MIN(humidity_pct) AS humidity_min,
+        AVG(humidity_pct) AS humidity_avg,
+        MAX(humidity_pct) AS humidity_max,
+        MIN(pressure_hpa) AS pressure_min,
+        AVG(pressure_hpa) AS pressure_avg,
+        MAX(pressure_hpa) AS pressure_max,
+        AVG(gas_raw) AS gas_avg,
+        MAX(gas_raw) AS gas_max,
+        SUM(CASE WHEN gas_alert THEN 1 ELSE 0 END)::int AS gas_alert_count,
+        SUM(CASE WHEN shock THEN 1 ELSE 0 END)::int AS shock_count,
+        MAX(tilt_deg) AS tilt_max,
+        SUM(CASE WHEN COALESCE(gps_fix, FALSE) THEN 1 ELSE 0 END)::int AS gps_fix_true_count
+      FROM telemetry_history
+      WHERE tenant_id = $1
+        AND trip_id = $2
+    `,
+    [input.tenantId, input.tripId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function updateTripMetadata(executor, input) {
+  const result = await executor.query(
+    `
+      UPDATE trips
+      SET
+        metadata_json = COALESCE(metadata_json, '{}'::jsonb) || $3::jsonb,
+        updated_at = NOW()
+      WHERE id = $1
+        AND tenant_id = $2
+      RETURNING *
+    `,
+    [input.tripId, input.tenantId, JSON.stringify(input.patch || {})]
+  );
+
+  return result.rows[0] || null;
+}
+
 module.exports = {
   listTrips,
   getTripById,
@@ -209,4 +258,6 @@ module.exports = {
   createTrip,
   startTrip,
   completeTrip,
+  getTripTelemetryAggregate,
+  updateTripMetadata,
 };

@@ -14,6 +14,7 @@ const { createReportsService } = require("./services/reportsService");
 const { createAdminService } = require("./services/adminService");
 const { createAuthService } = require("./services/authService");
 const { createTripsService } = require("./services/tripsService");
+const { createTripSummaryAiService } = require("./services/tripSummaryAiService");
 const { startOfflineScannerJob } = require("./jobs/offlineScannerJob");
 const telemetryRepository = require("./repositories/telemetryRepository");
 const assetRepository = require("./repositories/assetRepository");
@@ -99,6 +100,11 @@ async function main() {
       telemetryValidator,
     });
 
+    const tripSummaryAiService = createTripSummaryAiService({
+      config,
+      logger,
+    });
+
     const services = {
       authService: createAuthService({
         config,
@@ -125,6 +131,8 @@ async function main() {
         tripsRepository,
         assetRepository,
         auditRepository,
+        alertsRepository,
+        tripSummaryAiService,
       }),
       adminService: createAdminService({
         pool,

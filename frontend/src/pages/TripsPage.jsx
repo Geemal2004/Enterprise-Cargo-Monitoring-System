@@ -7,29 +7,14 @@ import {
   MapMarker,
   MarkerContent,
   MarkerLabel,
-  MapRoute,
   MapControls,
   useMap,
 } from "@/components/ui/map";
-import { Clock, Loader2, Route as RouteIcon } from "lucide-react";
 import { useFleetDataContext } from "../context/FleetDataContext";
 import { createTrip, fetchTrips, startTrip, completeTrip } from "../api/tripsApi";
 import { extractTelemetry, formatDateTime } from "../types/telemetry";
 
 const DEFAULT_CENTER = [80.7718, 7.8731];
-
-function formatDuration(seconds) {
-  const mins = Math.round(seconds / 60);
-  if (mins < 60) return `${mins} min`;
-  const hours = Math.floor(mins / 60);
-  const remainingMins = mins % 60;
-  return `${hours}h ${remainingMins}m`;
-}
-
-function formatDistance(meters) {
-  if (meters < 1000) return `${Math.round(meters)} m`;
-  return `${(meters / 1000).toFixed(1)} km`;
-}
 
 function extractErrorMessage(error) {
   return (
@@ -38,6 +23,19 @@ function extractErrorMessage(error) {
     "Request failed. Try again in a moment."
   );
 }
+
+const CARGO_TYPE_OPTIONS = [
+  { value: "GENERAL_CARGO", label: "General cargo" },
+  { value: "PERISHABLE_FOOD", label: "Perishable food" },
+  { value: "PHARMACEUTICALS", label: "Pharmaceuticals" },
+  { value: "GAS_CYLINDERS", label: "Gas cylinders" },
+  { value: "CHEMICALS", label: "Chemicals" },
+  { value: "ELECTRONICS", label: "Electronics" },
+  { value: "FRAGILE_GOODS", label: "Fragile goods" },
+  { value: "LIQUID_CARGO", label: "Liquid cargo" },
+  { value: "LIVESTOCK", label: "Livestock" },
+  { value: "CUSTOM", label: "Custom / other" },
+];
 
 function MapClickHandler({ mode, onPick }) {
   const { map } = useMap();
@@ -71,15 +69,13 @@ export default function TripsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const [routeOptions, setRouteOptions] = useState([]);
-  const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
-  const [routeLoading, setRouteLoading] = useState(false);
-
   const [mapPickMode, setMapPickMode] = useState("");
 
   const [formState, setFormState] = useState({
     truckId: "",
     containerId: "",
+    cargoType: "GENERAL_CARGO",
+    goodsDescription: "",
     originName: "Current Location",
     originLat: "",
     originLon: "",
@@ -137,52 +133,6 @@ export default function TripsPage() {
     loadTrips();
   }, [loadTrips]);
 
-  useEffect(() => {
-    async function fetchRoutes() {
-      if (!routeStart || !routeEnd) {
-        setRouteOptions([]);
-        return;
-      }
-
-      setRouteLoading(true);
-      try {
-        const response = await fetch(
-          `https://router.project-osrm.org/route/v1/driving/${routeStart.lon},${routeStart.lat};${routeEnd.lon},${routeEnd.lat}?overview=full&geometries=geojson&alternatives=true`
-        );
-        const data = await response.json();
-
-        if (Array.isArray(data.routes) && data.routes.length > 0) {
-          const nextRoutes = data.routes.map((route) => ({
-            coordinates: route.geometry.coordinates,
-            duration: route.duration,
-            distance: route.distance,
-          }));
-          setRouteOptions(nextRoutes);
-          setSelectedRouteIndex(0);
-        } else {
-          setRouteOptions([]);
-        }
-      } catch (routeError) {
-        console.error("Failed to fetch routes:", routeError);
-        setRouteOptions([]);
-      } finally {
-        setRouteLoading(false);
-      }
-    }
-
-    fetchRoutes();
-  }, [routeStart, routeEnd]);
-
-  const sortedRoutes = useMemo(() => {
-    return routeOptions
-      .map((route, index) => ({ route, index }))
-      .sort((a, b) => {
-        if (a.index === selectedRouteIndex) return 1;
-        if (b.index === selectedRouteIndex) return -1;
-        return 0;
-      });
-  }, [routeOptions, selectedRouteIndex]);
-
   function handleUseCurrentLocation() {
     const telemetry = extractTelemetry(selectedEntry);
     if (!telemetry?.gps) {
@@ -237,6 +187,11 @@ export default function TripsPage() {
       return;
     }
 
+    if (!formState.cargoType) {
+      setError("Cargo type is required.");
+      return;
+    }
+
     if (!formState.originLat || !formState.originLon || !formState.destinationLat || !formState.destinationLon) {
       setError("Origin and destination coordinates are required.");
       return;
@@ -249,6 +204,8 @@ export default function TripsPage() {
         containerCode: formState.containerId,
         originName: formState.originName,
         destinationName: formState.destinationName,
+        cargoType: formState.cargoType,
+        goodsDescription: formState.goodsDescription,
         originLat: formState.originLat,
         originLon: formState.originLon,
         destinationLat: formState.destinationLat,
@@ -332,7 +289,10 @@ export default function TripsPage() {
       <section className="panel-surface">
         <div className="panel-headline">
           <h3>Create Trip</h3>
-          <p>Choose a container, set the start and destination, and start tracking.</p>
+          <p>
+            Choose a container and record only start and destination. Route path will come from
+            telemetry GPS once the trip is in progress.
+          </p>
         </div>
 
         {error ? <div className="error-box">{error}</div> : null}
@@ -365,6 +325,38 @@ export default function TripsPage() {
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className="form-label" htmlFor="trip-cargo-type">
+            Cargo Type
+            <select
+              id="trip-cargo-type"
+              className="form-input"
+              value={formState.cargoType}
+              onChange={(event) =>
+                setFormState((current) => ({ ...current, cargoType: event.target.value }))
+              }
+              required
+            >
+              {CARGO_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="form-label" htmlFor="trip-goods-description">
+            Goods Description (optional)
+            <input
+              id="trip-goods-description"
+              className="form-input"
+              value={formState.goodsDescription}
+              onChange={(event) =>
+                setFormState((current) => ({ ...current, goodsDescription: event.target.value }))
+              }
+              placeholder="Example: chilled dairy, vaccine batch, industrial solvents"
+            />
           </label>
 
           <div className="inline-actions">
@@ -481,20 +473,6 @@ export default function TripsPage() {
             <MapControls position="bottom-right" showLocate={true} showZoom={true} />
             <MapClickHandler mode={mapPickMode} onPick={handlePickLocation} />
 
-            {sortedRoutes.map(({ route, index }) => {
-              const isSelected = index === selectedRouteIndex;
-              return (
-                <MapRoute
-                  key={index}
-                  coordinates={route.coordinates}
-                  color={isSelected ? "#6366f1" : "#94a3b8"}
-                  width={isSelected ? 6 : 5}
-                  opacity={isSelected ? 1 : 0.6}
-                  onClick={() => setSelectedRouteIndex(index)}
-                />
-              );
-            })}
-
             {routeStart ? (
               <MapMarker longitude={routeStart.lon} latitude={routeStart.lat}>
                 <MarkerContent>
@@ -513,48 +491,11 @@ export default function TripsPage() {
               </MapMarker>
             ) : null}
           </Map>
-
-          {routeLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/50">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
-            </div>
-          )}
         </div>
-
-        {routeOptions.length > 0 && (
-          <div className="panel-surface top-gap">
-            <div className="panel-headline">
-              <h4>Route Options</h4>
-              <p>Select the preferred OSRM route.</p>
-            </div>
-            <div className="inline-actions">
-              {routeOptions.map((route, index) => {
-                const isFastest = index === 0;
-                return (
-                  <button
-                    key={index}
-                    onClick={() => setSelectedRouteIndex(index)}
-                    className="table-action"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="size-3.5" />
-                      <span className="font-medium">{formatDuration(route.duration)}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs opacity-80">
-                      <RouteIcon className="size-3" />
-                      {formatDistance(route.distance)}
-                    </div>
-                    {isFastest && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-                        Fastest
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <p className="muted-text top-gap text-xs">
+          No planned route is generated at trip creation. Open Trip Details to view the actual
+          traveled path from telemetry GPS history.
+        </p>
       </section>
 
       <section className="panel-surface">
@@ -570,6 +511,7 @@ export default function TripsPage() {
                 <th>Trip</th>
                 <th>Truck</th>
                 <th>Container</th>
+                <th>Cargo</th>
                 <th>Status</th>
                 <th>Planned Start</th>
                 <th>Actual Start</th>
@@ -580,7 +522,7 @@ export default function TripsPage() {
             <tbody>
               {trips.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     {loadingTrips ? "Loading trips..." : "No trips found."}
                   </td>
                 </tr>
@@ -595,6 +537,7 @@ export default function TripsPage() {
                     </td>
                     <td>{trip.truck_code}</td>
                     <td>{trip.container_code}</td>
+                    <td>{trip?.metadata_json?.cargo?.cargoLabel || trip?.metadata_json?.cargo?.cargoType || "-"}</td>
                     <td>
                       <span className="pill pill-neutral">{trip.status}</span>
                     </td>

@@ -92,6 +92,12 @@ export default function TripDetailPage() {
 
   const telemetry = extractTelemetry(telemetryEntry);
   const gps = telemetry.gps || {};
+  const tripMetadata =
+    trip?.metadata_json && typeof trip.metadata_json === "object"
+      ? trip.metadata_json
+      : {};
+  const cargo = tripMetadata.cargo || {};
+  const aiSummary = tripMetadata.aiSummary || null;
   const liveFix =
     typeof gps.lat === "number" && typeof gps.lon === "number"
       ? { lat: gps.lat, lon: gps.lon }
@@ -228,11 +234,78 @@ export default function TripDetailPage() {
           <p className="summary-value">{trip.container_code}</p>
           <p className="summary-subtitle">Tenant: {trip.tenant_code || "-"}</p>
         </div>
+        <div className="summary-card">
+          <p className="summary-title">Cargo Type</p>
+          <p className="summary-value">{cargo.cargoLabel || cargo.cargoType || "General cargo"}</p>
+          <p className="summary-subtitle">{cargo.goodsDescription || "No additional description"}</p>
+        </div>
         <div className="summary-card summary-success">
           <p className="summary-title">Planned Start</p>
           <p className="summary-value">{formatDateTime(trip.planned_start_at)}</p>
           <p className="summary-subtitle">Actual: {formatDateTime(trip.actual_start_at)}</p>
         </div>
+      </section>
+
+      <section className="panel-surface">
+        <div className="panel-headline">
+          <h3>AI Trip Summary</h3>
+          <p>
+            Generated at completion with cargo-aware priorities and telemetry trend analysis.
+          </p>
+        </div>
+
+        {aiSummary ? (
+          <div className="page-grid">
+            <div className="summary-grid">
+              <div className="summary-card">
+                <p className="summary-title">Condition</p>
+                <p className="summary-value">{aiSummary.condition || "-"}</p>
+                <p className="summary-subtitle">Provider: {aiSummary.provider || "-"}</p>
+              </div>
+              <div className="summary-card">
+                <p className="summary-title">Model</p>
+                <p className="summary-value">{aiSummary.model || "-"}</p>
+                <p className="summary-subtitle">Generated: {formatDateTime(aiSummary.generatedAt)}</p>
+              </div>
+            </div>
+
+            <div className="summary-card">
+              <p className="summary-title">Summary</p>
+              <p className="summary-subtitle">{aiSummary.summary || "No summary text available."}</p>
+            </div>
+
+            <div className="summary-grid">
+              <div className="summary-card">
+                <p className="summary-title">Key Findings</p>
+                {Array.isArray(aiSummary.criticalFindings) && aiSummary.criticalFindings.length ? (
+                  <ul className="summary-subtitle">
+                    {aiSummary.criticalFindings.map((item, index) => (
+                      <li key={`${item}-${index}`}>{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="summary-subtitle">No critical findings reported.</p>
+                )}
+              </div>
+              <div className="summary-card">
+                <p className="summary-title">Recommendations</p>
+                {Array.isArray(aiSummary.recommendations) && aiSummary.recommendations.length ? (
+                  <ul className="summary-subtitle">
+                    {aiSummary.recommendations.map((item, index) => (
+                      <li key={`${item}-${index}`}>{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="summary-subtitle">No recommendations reported.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="empty-state">
+            No AI summary yet. Complete an in-progress trip to generate one automatically.
+          </p>
+        )}
       </section>
 
       <section className="panel-surface">

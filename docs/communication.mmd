@@ -1,0 +1,50 @@
+sequenceDiagram
+    participant CN as Container Node (ESP32-S3)
+    participant SD as SD Card (Local Backup)
+    participant GN as Gateway Node (SIM800L)
+    participant EMQX as EMQX Serverless Broker
+    participant BE as Backend Services
+    participant DB as Neon PostgreSQL DB
+    participant FE as Frontend Application
+
+    note over CN,GN: Edge Network (Isolated Trailer)
+    loop Every 2500ms
+        CN->>CN: Read Sensors (I2C/Analog)<br/>AHT10, BMP180, MPU6050, MQ2
+        
+        CN->>SD: appendLogCsv()<br/>Log Raw Telemetry Locally
+        SD-->>CN: status: sdOk
+        
+        CN->>GN: WiFi ESP-NOW Broadcast<br/>[CargoPacket] struct
+    end
+    
+    note over GN,EMQX: Uplink Backhaul (Cellular TLS)
+    loop Async Event Driven
+        GN->>GN: Receive ESP-NOW Packet
+        GN->>GN: Read Serial GPS (NMEA)<br/>Acquire Lat/Lon/Speed & Time
+        
+        note right of GN: Construct JSON Payload
+        GN->>GN: Merge Sensor Data + GPS Fix
+        
+        GN->>EMQX: SSLClient MQTTS Publish (Port 8883)<br/>topic: tenant/demo/truck/.../telemetry
+        EMQX-->>GN: PUBACK (if QoS > 0)
+    end
+    
+    note over EMQX,DB: Cloud Processing Pipeline
+    loop Message Routing
+        EMQX->>BE: MQTT Subscription / Webhook<br/>Deliver JSON Payload
+        
+        BE->>BE: Validate Token/Topic & Map Schema
+        BE->>BE: Evaluate Conditions for Alerts<br/>(e.g., Gas Alert, Shock Threshold)
+        
+        BE->>DB: ORM Insert/Update Query<br/>Write telemetry & update states
+        DB-->>BE: Query Ack
+    end
+    
+    note over BE,FE: Presentation App
+    loop Client View
+        FE->>BE: HTTP GET /api/telemetry/latest <br/>or <br/>WebSocket Upgrade
+        BE->>DB: Fetch Recent History
+        DB-->>BE: Result Rows
+        BE-->>FE: JSON Response / WS Stream
+        FE->>FE: Update Dashboard Charts/Map
+    end
