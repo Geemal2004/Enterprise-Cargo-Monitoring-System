@@ -12,7 +12,7 @@ import {
   Workflow,
   Zap,
 } from "lucide-react";
-import robot from "../assets/product.jpeg";
+import robot from "/containernode.jpg";
 import cubes from "../assets/cubes.jpg";
 import adminImage from "../assets/image.png";
 
@@ -85,23 +85,20 @@ function Hero() {
             Connected Cargo
           </h1>
 
-          <div className="absolute right-0 top-0 hidden h-32 w-44 overflow-hidden rounded-2xl shadow-soft md:block lg:h-40 lg:w-56">
-            <img
-              src={cubes}
-              alt="Stacked metallic warehouse boxes"
-              className="h-full w-full object-cover"
-              width={768}
-              height={768}
-            />
-            <button
-              aria-label="Play product video"
-              className="absolute inset-0 grid place-items-center bg-foreground/10 backdrop-blur-[1px] transition hover:bg-foreground/20"
-            >
-              <span className="grid h-12 w-12 place-items-center rounded-full bg-surface-elevated text-ink shadow-soft">
-                <Play className="h-4 w-4 fill-ink" />
-              </span>
-            </button>
-          </div>
+            {/* Hero Showcase Images - Top Right */}
+            <div className="absolute right-0 top-0  items-end  z-20">
+              
+              <div className="rounded-2xl shadow-xl bg-white/80 backdrop-blur-lg p-2 border border-gray-200">
+                <img
+                  src={"/node2.jpeg"}
+                  alt="Cargo Sensor Node"
+                  className="w-40 h-50 object-cover rounded-xl border border-gray-100 shadow-md hover:scale-105 transition-transform duration-300"
+                  style={{ boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.10)' }}
+                />
+              </div>
+            </div>
+
+          
         </div>
 
         <div className="mt-10 grid grid-cols-1 items-end gap-10 lg:grid-cols-12 lg:gap-6">
@@ -219,15 +216,15 @@ function IntroBand() {
 
       <div className="relative overflow-hidden bg-surface lg:col-span-3">
         <img
-          src={adminImage}
-          alt="System Admin"
+          src="/node1.jpeg"
+          alt="node1"
           className="h-full w-full object-cover"
           loading="lazy"
           width={768}
           height={1024}
         />
         <div className="absolute right-6 top-6 rounded-xl bg-surface-elevated/90 px-4 py-2 backdrop-blur">
-          <p className="font-display text-base font-bold text-ink">System Admin</p>
+          <p className="font-display text-base font-bold text-ink">Realtime Tracking</p>
           <p className="text-xs text-muted-foreground">Cargo Monitor</p>
         </div>
       </div>

@@ -1,6 +1,8 @@
 {
   "dependencies": {
+    "@types/three": "^0.184.0",
     "nodemon": "^3.1.14",
-    "react-circular-progressbar": "^2.2.0"
+    "react-circular-progressbar": "^2.2.0",
+    "three": "^0.184.0"
   }
 }
