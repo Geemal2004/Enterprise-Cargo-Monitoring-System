@@ -1,4 +1,5 @@
 export const OFFLINE_THRESHOLD_MS = 30000;
+const TELEMETRY_TIME_ZONE = "Asia/Colombo";
 
 export function getDeviceKey(entry) {
   if (entry && entry.key) {
@@ -149,12 +150,53 @@ function asBooleanOrNull(value) {
   return null;
 }
 
+function parseTimestampMs(value) {
+  if (value === null || value === undefined) {
+    return NaN;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
+
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if (!raw) {
+      return NaN;
+    }
+
+    // Accept unix timestamps provided as numeric strings.
+    const asNumber = Number(raw);
+    if (Number.isFinite(asNumber)) {
+      return asNumber > 1_000_000_000_000 ? asNumber : asNumber * 1000;
+    }
+
+    return Date.parse(raw);
+  }
+
+  return NaN;
+}
+
+function formatTelemetryTime(tsMs) {
+  return new Date(tsMs).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: TELEMETRY_TIME_ZONE,
+  });
+}
+
 function buildHistoryPoint(point, index) {
-  const tsRaw = point.ts ?? point.timestamp ?? point.receivedAt ?? point.time ?? null;
-  const parsedTsMs =
-    typeof tsRaw === "number"
-      ? (tsRaw > 1_000_000_000_000 ? tsRaw : tsRaw * 1000)
-      : (tsRaw ? Date.parse(tsRaw) : NaN);
+  const tsRaw =
+    point.ts ??
+    point.timestamp ??
+    point.occurredAt ??
+    point.receivedAt ??
+    point.time ??
+    point.createdAt ??
+    null;
+  const parsedTsMs = parseTimestampMs(tsRaw);
 
   const tsMs = Number.isFinite(parsedTsMs) ? parsedTsMs : Date.now();
   const env = point.env || {};
@@ -163,11 +205,7 @@ function buildHistoryPoint(point, index) {
   return {
     index,
     tsMs,
-    label: new Date(tsMs).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
+    label: formatTelemetryTime(tsMs),
     temperatureC: asNumberOrNull(env.temperatureC ?? point.temperatureC),
     humidityPct: asNumberOrNull(env.humidityPct ?? point.humidityPct),
     pressureHpa: asNumberOrNull(env.pressureHpa ?? point.pressureHpa),
