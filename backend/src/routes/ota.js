@@ -173,7 +173,7 @@ function resolveOtaHost() {
     return process.env.OTA_HOST.trim().replace(/\/$/, "");
   }
 
-  return "http://localhost:3000";
+  return "https://vish85521-cargo.hf.space";
 }
 
 function createOtaFirmwareHandler() {

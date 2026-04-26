@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import OtaPanel from "../components/OtaPanel";
 import WifiPanel from "../components/WifiPanel";
 
+const DEFAULT_API_URL = "https://vish85521-cargo.hf.space/api";
+
 function getEventSourceUrl() {
-  const sseBase =
-    (import.meta.env.VITE_API_URL || "").replace(/\/api$/, "") || window.location.origin;
+  const sseBase = (import.meta.env.VITE_API_URL || DEFAULT_API_URL).replace(/\/api$/, "");
   return `${sseBase}/api/ota/events`;
 }
 

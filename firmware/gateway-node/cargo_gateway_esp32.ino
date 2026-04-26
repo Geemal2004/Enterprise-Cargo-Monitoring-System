@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <esp_idf_version.h>
@@ -169,6 +170,7 @@ String otaGatewayTopicBase = "tenant/demo/truck/TRUCK01/ota/gateway";
 String otaContainerTopicBase = "tenant/demo/truck/TRUCK01/ota/container";
 uint8_t lastGatewayOtaProgress = 255;
 unsigned long lastGatewayOtaProgressMs = 0;
+WiFiClient *activeGatewayOtaClient = nullptr;
 
 unsigned long gpsLastByteMs = 0;
 unsigned long gpsLastBaudScanMs = 0;
@@ -315,6 +317,7 @@ struct ParsedHttpUrl {
   String host;
   uint16_t port;
   String path;
+  bool https;
 };
 
 bool ensureNetworkAndGprs();
@@ -341,17 +344,25 @@ bool parseHttpUrl(const char *url, ParsedHttpUrl &parts) {
   String raw = String(url ? url : "");
   raw.trim();
 
-  if (!raw.startsWith("http://")) {
-    Serial.printf("[OTA] Unsupported URL (expected http://): %s\n", raw.c_str());
+  String remainder;
+  parts = ParsedHttpUrl{};
+  if (raw.startsWith("https://")) {
+    parts.https = true;
+    parts.port = 443;
+    remainder = raw.substring(8);
+  } else if (raw.startsWith("http://")) {
+    parts.https = false;
+    parts.port = 80;
+    remainder = raw.substring(7);
+  } else {
+    Serial.printf("[OTA] Unsupported URL (expected http:// or https://): %s\n", raw.c_str());
     return false;
   }
 
-  String remainder = raw.substring(7);
   const int slashIndex = remainder.indexOf('/');
   String hostPort = slashIndex >= 0 ? remainder.substring(0, slashIndex) : remainder;
 
   parts.path = slashIndex >= 0 ? remainder.substring(slashIndex) : "/";
-  parts.port = 80;
 
   const int colonIndex = hostPort.lastIndexOf(':');
   if (colonIndex >= 0) {
@@ -387,13 +398,14 @@ bool openWifiHttpStream(WiFiClient &client, const char *url, ParsedHttpUrl &part
   client.stop();
   client.setTimeout(15000);
 
-  Serial.printf("[OTA] Opening WiFi HTTP stream host=%s port=%u path=%s\n",
+  Serial.printf("[OTA] Opening WiFi %s stream host=%s port=%u path=%s\n",
+                parts.https ? "HTTPS" : "HTTP",
                 parts.host.c_str(),
                 parts.port,
                 parts.path.c_str());
 
   if (!client.connect(parts.host.c_str(), parts.port)) {
-    Serial.println("[OTA] HTTP TCP connect failed over WiFi");
+    Serial.println("[OTA] HTTP TCP/TLS connect failed over WiFi");
     return false;
   }
 
@@ -946,20 +958,29 @@ void performGatewayOta() {
     return;
   }
 
-  if (strncmp(otaUrl, "http://", 7) != 0) {
-    finishOtaFailure("gateway", "Gateway OTA URL must use plain http:// LAN backend URL");
+  ParsedHttpUrl gatewayOtaParts{};
+  if (!parseHttpUrl(otaUrl, gatewayOtaParts)) {
+    finishOtaFailure("gateway", "Gateway OTA URL must use http:// or https:// firmware URL");
     return;
   }
 
   Serial.printf("[OTA] Download started: %s\n", otaUrl);
   publishOtaStatus("gateway", "downloading", "Download started over WiFi", 0);
 
-  WiFiClient wifiClient;
+  WiFiClient plainClient;
+  WiFiClientSecure tlsClient;
+  WiFiClient *downloadClient = &plainClient;
+  if (gatewayOtaParts.https) {
+    tlsClient.setInsecure();
+    downloadClient = &tlsClient;
+  }
+
   lastGatewayOtaProgress = 255;
   lastGatewayOtaProgressMs = 0;
+  activeGatewayOtaClient = downloadClient;
 
   httpUpdate.rebootOnUpdate(false);
-  httpUpdate.onProgress([&wifiClient](int current, int total) {
+  httpUpdate.onProgress([](int current, int total) {
     if (total <= 0) {
       return;
     }
@@ -978,12 +999,15 @@ void performGatewayOta() {
     }
 
     if (otaCancelRequested) {
-      wifiClient.stop();
+      if (activeGatewayOtaClient) {
+        activeGatewayOtaClient->stop();
+      }
     }
   });
 
-  const t_httpUpdate_return result = httpUpdate.update(wifiClient, otaUrl);
-  wifiClient.stop();
+  const t_httpUpdate_return result = httpUpdate.update(*downloadClient, otaUrl);
+  activeGatewayOtaClient = nullptr;
+  downloadClient->stop();
 
   switch (result) {
     case HTTP_UPDATE_OK:
@@ -1034,10 +1058,22 @@ void performContainerOta() {
   Serial.printf("[OTA] Downloading container firmware from %s\n", otaUrl);
   publishOtaStatus("container", "downloading", "Preparing WiFi container download", 0);
 
-  WiFiClient wifiClient;
   ParsedHttpUrl parts{};
+  if (!parseHttpUrl(otaUrl, parts)) {
+    finishOtaFailure("container", "Container OTA URL must use http:// or https:// firmware URL");
+    return;
+  }
+
+  WiFiClient plainClient;
+  WiFiClientSecure tlsClient;
+  WiFiClient *downloadClient = &plainClient;
+  if (parts.https) {
+    tlsClient.setInsecure();
+    downloadClient = &tlsClient;
+  }
+
   int32_t totalSize = -1;
-  if (!openWifiHttpStream(wifiClient, otaUrl, parts, totalSize)) {
+  if (!openWifiHttpStream(*downloadClient, otaUrl, parts, totalSize)) {
     finishOtaFailure("container", "Could not download container firmware over WiFi");
     return;
   }
@@ -1055,23 +1091,23 @@ void performContainerOta() {
   uint8_t lastProgress = 255;
   unsigned long lastDataMs = millis();
 
-  while (bytesLeft > 0 && (wifiClient.connected() || wifiClient.available())) {
+  while (bytesLeft > 0 && (downloadClient->connected() || downloadClient->available())) {
     if (otaCancelRequested) {
-      wifiClient.stop();
+      downloadClient->stop();
       finishOtaCancelled("container");
       return;
     }
 
-    const int availableBytes = wifiClient.available();
+    const int availableBytes = downloadClient->available();
     if (availableBytes <= 0) {
       if (millis() - lastDataMs > OTA_READ_TIMEOUT_MS) {
-        wifiClient.stop();
+        downloadClient->stop();
         finishOtaFailure("container", "Timed out while downloading container firmware");
         return;
       }
       mqtt_client.loop();
       if (otaCancelRequested) {
-        wifiClient.stop();
+        downloadClient->stop();
         finishOtaCancelled("container");
         return;
       }
@@ -1081,7 +1117,7 @@ void performContainerOta() {
     }
 
     const size_t toRead = min((size_t)OTA_CHUNK_SIZE, min((size_t)availableBytes, (size_t)bytesLeft));
-    const int got = wifiClient.read(chunkBuffer, toRead);
+    const int got = downloadClient->read(chunkBuffer, toRead);
     if (got <= 0) {
       delay(10);
       continue;
@@ -1109,7 +1145,7 @@ void performContainerOta() {
 
     mqtt_client.loop();
     if (otaCancelRequested) {
-      wifiClient.stop();
+      downloadClient->stop();
       finishOtaCancelled("container");
       return;
     }
@@ -1117,7 +1153,7 @@ void performContainerOta() {
     delay(20);
   }
 
-  wifiClient.stop();
+  downloadClient->stop();
 
   if (offset != (uint32_t)totalSize) {
     finishOtaFailure("container", "Container firmware size mismatch");

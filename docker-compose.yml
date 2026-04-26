@@ -19,6 +19,7 @@ services:
       PORT: 5000
       API_PREFIX: ${API_PREFIX:-/api}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      OTA_HOST: ${OTA_HOST:-https://vish85521-cargo.hf.space}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
@@ -75,7 +76,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_API_URL: ${VITE_API_URL:-https://vish85521-cargo.hf.space/api}
     container_name: smart-cargo-frontend
     restart: unless-stopped
     depends_on:

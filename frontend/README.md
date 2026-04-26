@@ -30,7 +30,7 @@ React + Vite dashboard for Smart Cargo Monitoring.
 
 Create .env file from .env.example:
 
-- VITE_API_URL=http://localhost:5000/api
+- VITE_API_URL=https://vish85521-cargo.hf.space/api
 
 ## Run
 
