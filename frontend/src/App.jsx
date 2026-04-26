@@ -11,6 +11,7 @@ import FleetOverviewPage from "./pages/FleetOverviewPage";
 import DashboardPage from "./pages/DashboardPage";
 import FleetManagerAssignmentsPage from "./pages/FleetManagerAssignmentsPage";
 import LoginPage from "./pages/LoginPage";
+import OtaPage from "./pages/OtaPage";
 import TripDetailPage from "./pages/TripDetailPage";
 import TruckDetailPage from "./pages/TruckDetailPage";
 import TripsPage from "./pages/TripsPage";
@@ -37,6 +38,12 @@ export default function App() {
 						<Route element={<ProtectedPortal />}>
 							<Route path="/fleet" element={<FleetOverviewPage />} />
 							<Route path="/analytics" element={<AnalyticsPage />} />
+
+							<Route
+								element={<RequireRole allowedRoles={["super_admin", "tenant_admin", "admin"]} />}
+							>
+								<Route path="/ota" element={<OtaPage />} />
+							</Route>
 
 							<Route element={<RequireRole allowedRoles={["super_admin"]} />}>
 								<Route

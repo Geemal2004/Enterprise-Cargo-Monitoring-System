@@ -113,37 +113,21 @@ export default function TruckDetailPage() {
   const routeEntry = truckId && containerId ? getEntryByIds(truckId, containerId) : null;
   const selectedEntry = routeEntry || entries[0] || null;
 
-  if (!loading && !selectedEntry) {
-    return (
-      <section className="panel-surface">
-        <h2>Truck Detail</h2>
-        <p className="empty-state">No telemetry is available yet for any truck/container.</p>
-        <Link className="table-action" to="/fleet">
-          Back to Fleet Overview
-        </Link>
-      </section>
-    );
-  }
-
-  if (!selectedEntry) {
-    return <p className="empty-state">Loading selected asset details...</p>;
-  }
-
-  const selectedKey = getDeviceKey(selectedEntry);
-  const telemetry = extractTelemetry(selectedEntry);
+  const selectedKey = selectedEntry ? getDeviceKey(selectedEntry) : null;
+  const telemetry = selectedEntry ? extractTelemetry(selectedEntry) : {};
   const env = telemetry.env || {};
   const gas = telemetry.gas || {};
   const motion = telemetry.motion || {};
   const gps = telemetry.gps || {};
   const status = telemetry.status || {};
 
-  const deviceAlerts = alertsByKey[selectedKey] || [];
-  const deviceStatus = deriveDeviceStatus(selectedEntry, deviceAlerts);
+  const deviceAlerts = selectedKey ? (alertsByKey[selectedKey] || []) : [];
+  const deviceStatus = selectedEntry ? deriveDeviceStatus(selectedEntry, deviceAlerts) : { tone: "slate", label: "Loading...", code: "loading" };
 
-  const fallbackHistory = historyByKey[selectedKey] || extractHistoryPoints(selectedEntry);
-  const history = useDeviceHistory(selectedEntry.truckId, selectedEntry.containerId, fallbackHistory);
+  const fallbackHistory = selectedKey ? (historyByKey[selectedKey] || extractHistoryPoints(selectedEntry)) : [];
+  const history = useDeviceHistory(selectedEntry?.truckId, selectedEntry?.containerId, fallbackHistory);
 
-  const lastSeenMs = getReceivedAtMs(selectedEntry);
+  const lastSeenMs = selectedEntry ? getReceivedAtMs(selectedEntry) : 0;
   const showingFallback = !routeEntry && entries.length > 0 && truckId && containerId;
 
   useEffect(() => {
@@ -260,6 +244,22 @@ export default function TruckDetailPage() {
       isMounted = false;
     };
   }, [activeTrip, origin, destination]);
+
+  if (!loading && !selectedEntry) {
+    return (
+      <section className="panel-surface">
+        <h2>Truck Detail</h2>
+        <p className="empty-state">No telemetry is available yet for any truck/container.</p>
+        <Link className="table-action" to="/fleet">
+          Back to Fleet Overview
+        </Link>
+      </section>
+    );
+  }
+
+  if (!selectedEntry) {
+    return <p className="empty-state">Loading selected asset details...</p>;
+  }
 
   return (
     <div className="page-grid">

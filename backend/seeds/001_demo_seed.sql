@@ -42,7 +42,7 @@ SELECT
   t.id,
   'admin@demo.local',
   'Demo Admin',
-  '$2b$12$C6UzMDM.H6dfI/f/IKcEe.6Q4fA9M9vDOMkMt2rt7NmBGG99nmCa',
+  '$2a$12$4FG1pYtlgpfmB5O5mhqQjeWrDL4TTTSADI8zsimDfjipcKdKlpyAa',
   'ACTIVE',
   TRUE
 FROM selected_tenant t

@@ -17,6 +17,7 @@ export default function AppLayout() {
 
   const canManageUsers = hasAnyRole(["super_admin", "tenant_admin", "admin"]);
   const canManageAssignments = hasAnyRole(["super_admin"]);
+  const canManageOta = hasAnyRole(["super_admin", "tenant_admin", "admin"]);
   const canViewTrips = hasAnyRole(["super_admin", "tenant_admin", "admin", "fleet_manager"]);
   const primaryRole = user?.roles?.[0] || "viewer";
 
@@ -34,6 +35,7 @@ export default function AppLayout() {
             <NavItem to="/analytics" label="Analytics" />
             <NavItem to="/alerts" label="Alerts" />
             {canViewTrips ? <NavItem to="/trips" label="Trips" /> : null}
+            {canManageOta ? <NavItem to="/ota" label="OTA Updates" /> : null}
             {canManageUsers ? <NavItem to="/admin/users" label="User Management" /> : null}
             {canManageAssignments ? (
               <NavItem to="/admin/fleet-manager-assignments" label="Fleet Manager Assignments" />

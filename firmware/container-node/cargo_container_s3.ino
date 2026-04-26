@@ -8,6 +8,7 @@
 #include <Adafruit_AHTX0.h>
 #include <Adafruit_BMP085.h>
 #include <Adafruit_MPU6050.h>
+#include <Update.h>
 #include "CargoPacket.h"
 
 // -----------------------------------------------------------------------------
@@ -40,6 +41,36 @@ static const uint8_t SENSOR_NODE_MAC[6] = {0xAC, 0xA7, 0x04, 0x27, 0xBD, 0x00};
 static const uint8_t GATEWAY_NODE_MAC[6] = {0xEC, 0xE3, 0x34, 0x23, 0x43, 0x24};
 
 static const char SD_LOG_FILE[] = "/telemetry.csv";
+static const uint32_t TIME_SYNC_MAGIC = 0x54494D45UL; // "TIME"
+static const size_t OTA_CHUNK_SIZE = 200;
+static const uint32_t OTA_PKT_BEGIN = 0x4F544142UL;
+static const uint32_t OTA_PKT_CHUNK = 0x4F54414EUL;
+static const uint32_t OTA_PKT_END = 0x4F544145UL;
+
+struct TimeSyncPacket {
+  uint32_t magic;
+  uint32_t unixTs;
+};
+
+struct OtaBeginPacket {
+  uint32_t magic;
+  uint32_t totalSize;
+  char filename[64];
+};
+
+struct OtaChunkPacket {
+  uint32_t magic;
+  uint32_t totalSize;
+  uint32_t offset;
+  uint16_t chunkLen;
+  uint8_t data[OTA_CHUNK_SIZE];
+};
+
+struct OtaEndPacket {
+  uint32_t magic;
+  uint32_t totalSize;
+  uint32_t crc32;
+};
 
 // -----------------------------------------------------------------------------
 // Globals
@@ -54,6 +85,13 @@ bool bmpReady = false;
 bool mpuReady = false;
 bool espNowReady = false;
 bool sdReady = false;
+bool otaInProgress = false;
+uint32_t otaTotalSize = 0;
+uint32_t otaBytesReceived = 0;
+char otaFilename[64] = {};
+portMUX_TYPE timeMux = portMUX_INITIALIZER_UNLOCKED;
+volatile uint32_t syncedUnixTs = 0;
+volatile uint32_t syncedAtMs = 0;
 
 uint32_t sequenceNo = 1;
 unsigned long lastCycleMs = 0;
@@ -154,17 +192,146 @@ bool appendLogCsv(const CargoPacket &pkt, bool sdFlagValue) {
   return true;
 }
 
+void handleOtaPacket(const uint8_t *data, int len) {
+  if (data == nullptr || len < (int)sizeof(uint32_t)) {
+    return;
+  }
+
+  uint32_t magic = 0;
+  memcpy(&magic, data, sizeof(magic));
+
+  if (magic == OTA_PKT_BEGIN && len >= (int)sizeof(OtaBeginPacket)) {
+    OtaBeginPacket pkt{};
+    memcpy(&pkt, data, sizeof(pkt));
+
+    otaTotalSize = pkt.totalSize;
+    otaBytesReceived = 0;
+    memset(otaFilename, 0, sizeof(otaFilename));
+    strncpy(otaFilename, pkt.filename, sizeof(otaFilename) - 1);
+
+    Serial.printf("[OTA] Begin: filename=%s totalSize=%lu\n",
+                  otaFilename,
+                  (unsigned long)otaTotalSize);
+
+    if (!Update.begin(otaTotalSize, U_FLASH)) {
+      Serial.println("[OTA] Update.begin() failed:");
+      Update.printError(Serial);
+      otaInProgress = false;
+      return;
+    }
+
+    otaInProgress = true;
+    Serial.println("[OTA] Update.begin() OK, receiving chunks...");
+    return;
+  }
+
+  if (magic == OTA_PKT_CHUNK && otaInProgress && len >= (int)sizeof(OtaChunkPacket)) {
+    OtaChunkPacket pkt{};
+    memcpy(&pkt, data, sizeof(pkt));
+
+    if (pkt.offset != otaBytesReceived) {
+      Serial.printf("[OTA] Offset mismatch! expected=%lu got=%lu - aborting\n",
+                    (unsigned long)otaBytesReceived,
+                    (unsigned long)pkt.offset);
+      Update.abort();
+      otaInProgress = false;
+      return;
+    }
+
+    const size_t written = Update.write(pkt.data, pkt.chunkLen);
+    if (written != pkt.chunkLen) {
+      Serial.printf("[OTA] Write error: wrote %u of %u bytes\n",
+                    (unsigned int)written,
+                    (unsigned int)pkt.chunkLen);
+      Update.abort();
+      otaInProgress = false;
+      return;
+    }
+
+    otaBytesReceived += pkt.chunkLen;
+    const uint8_t progress = otaTotalSize > 0
+                             ? (uint8_t)(((uint64_t)otaBytesReceived * 100) / otaTotalSize)
+                             : 0;
+    if (progress % 10 == 0) {
+      Serial.printf("[OTA] Progress: %lu / %lu bytes (%u%%)\n",
+                    (unsigned long)otaBytesReceived,
+                    (unsigned long)otaTotalSize,
+                    progress);
+    }
+    return;
+  }
+
+  if (magic == OTA_PKT_END && otaInProgress) {
+    OtaEndPacket pkt{};
+    memcpy(&pkt, data, sizeof(pkt));
+
+    Serial.printf("[OTA] End received. Bytes received: %lu / %lu\n",
+                  (unsigned long)otaBytesReceived,
+                  (unsigned long)otaTotalSize);
+
+    if (Update.end(true)) {
+      Serial.println("[OTA] Update successful! Rebooting in 1s...");
+      delay(1000);
+      ESP.restart();
+    } else {
+      Serial.println("[OTA] Update.end() failed:");
+      Update.printError(Serial);
+      otaInProgress = false;
+    }
+    return;
+  }
+}
+
+void handleIncoming(const uint8_t *mac, const uint8_t *data, int len) {
+  if (data == nullptr || len < (int)sizeof(uint32_t)) {
+    return;
+  }
+
+  uint32_t magic = 0;
+  memcpy(&magic, data, sizeof(magic));
+  if (magic == OTA_PKT_BEGIN || magic == OTA_PKT_CHUNK || magic == OTA_PKT_END) {
+    handleOtaPacket(data, len);
+    return;
+  }
+
+  if (len == (int)sizeof(TimeSyncPacket)) {
+    TimeSyncPacket pkt{};
+    memcpy(&pkt, data, sizeof(pkt));
+    if (pkt.magic == TIME_SYNC_MAGIC && pkt.unixTs > 1700000000UL) {
+      portENTER_CRITICAL_ISR(&timeMux);
+      syncedUnixTs = pkt.unixTs;
+      syncedAtMs = millis();
+      portEXIT_CRITICAL_ISR(&timeMux);
+      Serial.printf("[TIMESYNC] Received ts=%lu from %s\n",
+                    (unsigned long)pkt.unixTs,
+                    mac ? macToString(mac).c_str() : "unknown");
+    }
+    return;
+  }
+
+  Serial.printf("[ESP-NOW] Unknown packet magic=0x%08lX len=%d from %s, ignored\n",
+                (unsigned long)magic,
+                len,
+                mac ? macToString(mac).c_str() : "unknown");
+}
+
 #if defined(ESP_IDF_VERSION_MAJOR) && (ESP_IDF_VERSION_MAJOR >= 5)
 void onEspNowSent(const wifi_tx_info_t *txInfo, esp_now_send_status_t status) {
   (void)txInfo;
   Serial.printf("[ESP-NOW] Send => %s\n",
                 status == ESP_NOW_SEND_SUCCESS ? "SUCCESS" : "FAILED");
 }
+void onEspNowReceived(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+  handleIncoming(info ? info->src_addr : nullptr, data, len);
+}
 #else
 void onEspNowSent(const uint8_t *macAddr, esp_now_send_status_t status) {
   Serial.printf("[ESP-NOW] Send to %s => %s\n",
                 macToString(macAddr).c_str(),
                 status == ESP_NOW_SEND_SUCCESS ? "SUCCESS" : "FAILED");
+}
+void onEspNowReceived(const uint8_t *macAddr, const uint8_t *data, int len) {
+  handleIncoming(macAddr, data, len);
 }
 #endif
 
@@ -185,6 +352,7 @@ void initEspNow() {
   }
 
   esp_now_register_send_cb(onEspNowSent);
+  esp_now_register_recv_cb(onEspNowReceived);
 
   esp_now_peer_info_t peerInfo = {};
   memcpy(peerInfo.peer_addr, GATEWAY_NODE_MAC, 6);

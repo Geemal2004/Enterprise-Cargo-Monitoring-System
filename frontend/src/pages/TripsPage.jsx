@@ -501,7 +501,7 @@ export default function TripsPage() {
       <section className="panel-surface">
         <div className="panel-headline">
           <h3>Trips</h3>
-          <p>{loadingTrips ? "Refreshing trips..." : "Track planned and active routes."}</p>
+          <p>{loadingTrips ? "Refreshing trips..." : "Track trips and telemetry-driven routes."}</p>
         </div>
 
         <div className="table-wrap">

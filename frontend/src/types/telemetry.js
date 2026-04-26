@@ -150,7 +150,7 @@ function asBooleanOrNull(value) {
 }
 
 function buildHistoryPoint(point, index) {
-  const tsRaw = point.ts ?? point.timestamp ?? point.receivedAt ?? point.time ?? null;
+  const tsRaw = point.receivedAtMs ?? point.receivedAt ?? point.ts ?? point.timestamp ?? point.time ?? null;
   const parsedTsMs =
     typeof tsRaw === "number"
       ? (tsRaw > 1_000_000_000_000 ? tsRaw : tsRaw * 1000)
@@ -366,7 +366,8 @@ export function pushLiveHistory(previousByKey, entries, maxPoints = 72) {
 
     const point = buildHistoryPoint(
       {
-        ts: telemetry.ts || telemetry.receivedAt || entry.receivedAt,
+        receivedAt: telemetry.receivedAt || entry.receivedAt,
+        ts: telemetry.ts,
         env: telemetry.env,
         gas: telemetry.gas,
       },
