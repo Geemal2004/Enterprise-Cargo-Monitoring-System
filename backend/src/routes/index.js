@@ -11,7 +11,8 @@ const { createReportsRoutes } = require("./reportsRoutes");
 const { createHealthRoutes } = require("./healthRoutes");
 const { createAdminRoutes } = require("./adminRoutes");
 const { createTripsRoutes } = require("./tripsRoutes");
-const { createOtaRoutes, createOtaFirmwareHandler } = require("./ota");
+const { createOtaRoutes } = require("./ota");
+const { createWifiRoutes } = require("./wifiRoutes");
 const otaService = require("../services/otaService");
 const { asyncHandler } = require("../utils/asyncHandler");
 
@@ -45,14 +46,13 @@ function createApiRoutes(services, config, runtimeState) {
     })
   );
 
-  router.get("/ota/firmware/:target", createOtaFirmwareHandler());
-
   router.use(requireAuth, enforceTenantScope);
 
   router.use("/", createTelemetryRoutes(services, config));
   router.use("/fleet", createFleetRoutes(services));
   router.use("/alerts", createAlertsRoutes(services));
   router.use("/trips", createTripsRoutes(services));
+  router.use("/gateway/wifi", createWifiRoutes(services));
   router.use("/ota", createOtaRoutes(services));
   router.use("/reports", createReportsRoutes(services));
   router.use("/admin", createAdminRoutes(services));

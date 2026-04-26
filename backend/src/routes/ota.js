@@ -2,6 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const otaService = require("../services/otaService");
 const { createRequireRolesMiddleware } = require("../middleware/authMiddleware");
 const { asyncHandler } = require("../utils/asyncHandler");
@@ -51,6 +52,20 @@ function validateTarget(req, res, next) {
 
 function getFirmwarePath(target) {
   return path.join(FIRMWARE_DIR, `firmware-${normalizeTarget(target)}.bin`);
+}
+
+function describeFirmwareFile(filePath) {
+  const buffer = fs.readFileSync(filePath);
+  const text = buffer.toString("latin1");
+  const buildMatch =
+    /FW_BUILD:([A-Za-z0-9_.:+-]{6,96})/.exec(text) ||
+    /\b((?:gateway|container)-[A-Za-z0-9_.:+-]{6,96})/.exec(text);
+
+  return {
+    sizeBytes: buffer.length,
+    sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+    firmwareBuild: buildMatch ? buildMatch[1] : null,
+  };
 }
 
 function getRequestedUnit(req) {
@@ -153,18 +168,12 @@ async function ensureUnitExists(services, tenantCode, truckId, containerId) {
   return match;
 }
 
-function resolveOtaHost(req) {
+function resolveOtaHost() {
   if (process.env.OTA_HOST) {
-    return process.env.OTA_HOST.replace(/\/$/, "");
+    return process.env.OTA_HOST.trim().replace(/\/$/, "");
   }
 
-  const host = req.get("host");
-  if (host) {
-    return `${req.protocol}://${host}`;
-  }
-
-  const port = process.env.PORT || 3000;
-  return `http://localhost:${port}`;
+  return "http://localhost:3000";
 }
 
 function createOtaFirmwareHandler() {
@@ -182,9 +191,15 @@ function createOtaFirmwareHandler() {
     }
 
     const stat = fs.statSync(firmwarePath);
+    const descriptor = describeFirmwareFile(firmwarePath);
     res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("Content-Length", stat.size);
     res.setHeader("Content-Disposition", `attachment; filename="firmware-${target}.bin"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Firmware-Sha256", descriptor.sha256);
+    if (descriptor.firmwareBuild) {
+      res.setHeader("X-Firmware-Build", descriptor.firmwareBuild);
+    }
     fs.createReadStream(firmwarePath).pipe(res);
   };
 }
@@ -214,10 +229,21 @@ function createOtaRoutes(services) {
     }
 
     const target = req.params.target;
+    const descriptor = describeFirmwareFile(req.file.path);
+    if (!descriptor.firmwareBuild) {
+      fs.unlinkSync(req.file.path);
+      throw new AppError(
+        "Uploaded firmware does not contain an FW_BUILD marker. Export a fresh application .bin from the current sketch and upload that file.",
+        400
+      );
+    }
+
     const staged = {
       filename: req.file.originalname,
       sizeBytes: req.file.size,
       sizeKb: Number((req.file.size / 1024).toFixed(1)),
+      sha256: descriptor.sha256,
+      firmwareBuild: descriptor.firmwareBuild,
       uploadedAt: new Date().toISOString(),
       path: req.file.path,
     };
@@ -279,7 +305,7 @@ function createOtaRoutes(services) {
         requested.containerId
       );
 
-      const otaHost = resolveOtaHost(req);
+      const otaHost = resolveOtaHost();
       const firmwareUrl = `${otaHost}/api/ota/firmware/${target}`;
 
       await otaService.triggerOta({
@@ -297,6 +323,36 @@ function createOtaRoutes(services) {
         truckId: unit.truckId,
         containerId: unit.containerId,
         firmwareUrl,
+      });
+    })
+  );
+
+  router.post(
+    "/cancel/:target",
+    validateTarget,
+    asyncHandler(async (req, res) => {
+      const target = req.params.target;
+      const requested = getRequestedUnit(req);
+      const unit = await ensureUnitExists(
+        services,
+        requested.tenantCode,
+        requested.truckId,
+        requested.containerId
+      );
+
+      const status = await otaService.cancelOta({
+        tenantCode: unit.tenantCode || requested.tenantCode,
+        truckId: unit.truckId,
+        containerId: unit.containerId,
+        target,
+      });
+
+      res.status(200).json({
+        ok: true,
+        target,
+        truckId: unit.truckId,
+        containerId: unit.containerId,
+        status,
       });
     })
   );

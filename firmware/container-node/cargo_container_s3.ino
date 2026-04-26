@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <esp_now.h>
+#include <esp_wifi.h>
 #include <esp_idf_version.h>
 #include <SPI.h>
 #include <SD.h>
@@ -10,6 +11,7 @@
 #include <Adafruit_MPU6050.h>
 #include <Update.h>
 #include "CargoPacket.h"
+#include "TimeSyncPacket.h"
 
 // -----------------------------------------------------------------------------
 // Configuration constants
@@ -41,16 +43,12 @@ static const uint8_t SENSOR_NODE_MAC[6] = {0xAC, 0xA7, 0x04, 0x27, 0xBD, 0x00};
 static const uint8_t GATEWAY_NODE_MAC[6] = {0xEC, 0xE3, 0x34, 0x23, 0x43, 0x24};
 
 static const char SD_LOG_FILE[] = "/telemetry.csv";
-static const uint32_t TIME_SYNC_MAGIC = 0x54494D45UL; // "TIME"
 static const size_t OTA_CHUNK_SIZE = 200;
 static const uint32_t OTA_PKT_BEGIN = 0x4F544142UL;
 static const uint32_t OTA_PKT_CHUNK = 0x4F54414EUL;
 static const uint32_t OTA_PKT_END = 0x4F544145UL;
-
-struct TimeSyncPacket {
-  uint32_t magic;
-  uint32_t unixTs;
-};
+static const uint32_t ESP_NOW_CHANNEL_MAGIC = 0x4348414EUL; // "CHAN"
+static const uint8_t ESP_NOW_BOOT_CHANNEL = 1;
 
 struct OtaBeginPacket {
   uint32_t magic;
@@ -72,6 +70,11 @@ struct OtaEndPacket {
   uint32_t crc32;
 };
 
+struct EspNowChannelPacket {
+  uint32_t magic;
+  uint8_t channel;
+};
+
 // -----------------------------------------------------------------------------
 // Globals
 // -----------------------------------------------------------------------------
@@ -86,6 +89,7 @@ bool mpuReady = false;
 bool espNowReady = false;
 bool sdReady = false;
 bool otaInProgress = false;
+uint8_t espNowChannel = ESP_NOW_BOOT_CHANNEL;
 uint32_t otaTotalSize = 0;
 uint32_t otaBytesReceived = 0;
 char otaFilename[64] = {};
@@ -158,7 +162,7 @@ bool initSDCard() {
   }
 
   if (f.size() == 0) {
-    f.println("seq,ts,tempC,humidity,pressure,tilt,gasRaw,shock,sdOk");
+    f.println("seq,ts,real_time,tempC,humidity,pressure,tilt,gasRaw,shock,sdOk");
   }
   f.close();
 
@@ -166,16 +170,35 @@ bool initSDCard() {
   return true;
 }
 
-bool appendLogCsv(const CargoPacket &pkt, bool sdFlagValue) {
+uint32_t getRealTime(bool &isSynced) {
+  uint32_t baseUnixTs = 0;
+  uint32_t baseMs = 0;
+
+  portENTER_CRITICAL(&timeMux);
+  baseUnixTs = syncedUnixTs;
+  baseMs = syncedAtMs;
+  portEXIT_CRITICAL(&timeMux);
+
+  if (baseUnixTs > 1700000000UL && baseMs > 0) {
+    isSynced = true;
+    return baseUnixTs + ((millis() - baseMs) / 1000UL);
+  }
+
+  isSynced = false;
+  return (uint32_t)(millis() / 1000UL);
+}
+
+bool appendLogCsv(const CargoPacket &pkt, bool sdFlagValue, bool realTime) {
   File f = SD.open(SD_LOG_FILE, FILE_APPEND);
   if (!f) {
     Serial.println("[SD] Open failed for append.");
     return false;
   }
 
-  int written = f.printf("%lu,%lu,%.2f,%.2f,%.2f,%.2f,%u,%u,%u\n",
+  int written = f.printf("%lu,%lu,%u,%.2f,%.2f,%.2f,%.2f,%u,%u,%u\n",
                          (unsigned long)pkt.seq,
                          (unsigned long)pkt.ts,
+                         realTime ? 1 : 0,
                          pkt.tempC,
                          pkt.humidity,
                          pkt.pressure,
@@ -294,6 +317,28 @@ void handleIncoming(const uint8_t *mac, const uint8_t *data, int len) {
     return;
   }
 
+  if (magic == ESP_NOW_CHANNEL_MAGIC && len >= (int)sizeof(EspNowChannelPacket)) {
+    EspNowChannelPacket pkt{};
+    memcpy(&pkt, data, sizeof(pkt));
+    if (pkt.channel >= 1 && pkt.channel <= 13) {
+      espNowChannel = pkt.channel;
+      esp_wifi_set_channel(espNowChannel, WIFI_SECOND_CHAN_NONE);
+
+      esp_now_peer_info_t peerInfo = {};
+      memcpy(peerInfo.peer_addr, GATEWAY_NODE_MAC, 6);
+      peerInfo.channel = espNowChannel;
+      peerInfo.encrypt = false;
+      esp_err_t err = esp_now_is_peer_exist(GATEWAY_NODE_MAC)
+                        ? esp_now_mod_peer(&peerInfo)
+                        : esp_now_add_peer(&peerInfo);
+
+      Serial.printf("[ESP-NOW] Channel switched to %u err=%d\n",
+                    (unsigned int)espNowChannel,
+                    (int)err);
+      return;
+    }
+  }
+
   if (len == (int)sizeof(TimeSyncPacket)) {
     TimeSyncPacket pkt{};
     memcpy(&pkt, data, sizeof(pkt));
@@ -305,8 +350,8 @@ void handleIncoming(const uint8_t *mac, const uint8_t *data, int len) {
       Serial.printf("[TIMESYNC] Received ts=%lu from %s\n",
                     (unsigned long)pkt.unixTs,
                     mac ? macToString(mac).c_str() : "unknown");
+      return;
     }
-    return;
   }
 
   Serial.printf("[ESP-NOW] Unknown packet magic=0x%08lX len=%d from %s, ignored\n",
@@ -338,6 +383,9 @@ void onEspNowReceived(const uint8_t *macAddr, const uint8_t *data, int len) {
 void initEspNow() {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
+  WiFi.setSleep(false);
+  esp_wifi_set_channel(ESP_NOW_BOOT_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  espNowChannel = ESP_NOW_BOOT_CHANNEL;
 
   String localMac = WiFi.macAddress();
   localMac.toUpperCase();
@@ -356,7 +404,7 @@ void initEspNow() {
 
   esp_now_peer_info_t peerInfo = {};
   memcpy(peerInfo.peer_addr, GATEWAY_NODE_MAC, 6);
-  peerInfo.channel = 0;
+  peerInfo.channel = espNowChannel;
   peerInfo.encrypt = false;
 
   if (!esp_now_is_peer_exist(GATEWAY_NODE_MAC)) {
@@ -459,7 +507,7 @@ void setup() {
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   }
 
-  SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+  SPI.begin(PIN_SD_SCK, PIN_SD_MISO,PIN_SD_MOSI, PIN_SD_CS);
   sdReady = initSDCard();
   lastSdRetryMs = millis();
 
@@ -478,7 +526,8 @@ void loop() {
 
   CargoPacket pkt{};
   pkt.seq = sequenceNo++;
-  pkt.ts = (uint32_t)(now / 1000UL);
+  bool realTime = false;
+  pkt.ts = getRealTime(realTime);
 
   readSensors(pkt);
 
@@ -490,7 +539,7 @@ void loop() {
     sdReady = initSDCard();
   }
   if (sdReady) {
-    sdWriteOk = appendLogCsv(pkt, true);
+    sdWriteOk = appendLogCsv(pkt, true, realTime);
     if (!sdWriteOk) {
       sdReady = false;
     }

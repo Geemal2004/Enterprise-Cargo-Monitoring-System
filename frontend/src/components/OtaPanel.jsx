@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import apiClient from "../api/client";
 import DeviceSelector from "./DeviceSelector";
 import { useFleetDataContext } from "../context/FleetDataContext";
-
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 const TARGETS = [
   {
@@ -27,6 +25,8 @@ const STATE_META = {
   pending: { label: "Pending", color: "#f59e0b", icon: "◌" },
   downloading: { label: "Downloading", color: "#3b82f6", icon: "↓" },
   flashing: { label: "Flashing", color: "#8b5cf6", icon: "⚡" },
+  cancelling: { label: "Cancelling", color: "#f97316", icon: "!" },
+  cancelled: { label: "Cancelled", color: "#6b7280", icon: "×" },
   success: { label: "Updated", color: "#10b981", icon: "✓" },
   error: { label: "Failed", color: "#ef4444", icon: "✕" },
 };
@@ -41,12 +41,12 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function buildUnitKey(unit) {
-  return `${unit?.truckId || ""}::${unit?.containerId || ""}`;
+function shortHash(hash) {
+  return hash ? String(hash).slice(0, 12) : "";
 }
 
-function getEventSourceUrl() {
-  return `${String(API_BASE).replace(/\/$/, "")}/ota/events`;
+function buildUnitKey(unit) {
+  return `${unit?.truckId || ""}::${unit?.containerId || ""}`;
 }
 
 function createEmptyStatuses() {
@@ -67,14 +67,16 @@ function UnitStatusPill({ unit }) {
   );
 }
 
-function TargetCard({ target, selectedUnit, staged, status, onUpload, onTrigger }) {
+function TargetCard({ target, selectedUnit, staged, status, wifiConnected, onUpload, onTrigger, onCancel }) {
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
 
   const meta = STATE_META[status?.state] || STATE_META.idle;
-  const isActive = ["pending", "downloading", "flashing"].includes(status?.state);
+  const isActive = ["pending", "downloading", "flashing", "cancelling"].includes(status?.state);
+  const canCancel = ["pending", "downloading", "flashing"].includes(status?.state);
   const hasSelection = Boolean(selectedUnit?.truckId && selectedUnit?.containerId);
 
   async function handleFile(file) {
@@ -105,6 +107,11 @@ function TargetCard({ target, selectedUnit, staged, status, onUpload, onTrigger 
       return;
     }
 
+    if (!wifiConnected) {
+      setError("Gateway must be connected to WiFi before OTA update.");
+      return;
+    }
+
     setError("");
     setTriggering(true);
 
@@ -114,6 +121,24 @@ function TargetCard({ target, selectedUnit, staged, status, onUpload, onTrigger 
       setError(triggerError.message || "Trigger failed.");
     } finally {
       setTriggering(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!hasSelection) {
+      setError("Select a truck/container pair first.");
+      return;
+    }
+
+    setError("");
+    setCancelling(true);
+
+    try {
+      await onCancel(target.id);
+    } catch (cancelError) {
+      setError(cancelError.message || "Cancel failed.");
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -152,10 +177,20 @@ function TargetCard({ target, selectedUnit, staged, status, onUpload, onTrigger 
       {status?.message ? <p className="mt-4 text-sm text-ink">{status.message}</p> : null}
 
       {staged ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Staged firmware: <span className="font-semibold text-ink">{staged.filename}</span>
-          {` • ${formatBytes(staged.sizeBytes)}`}
-        </p>
+        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+          <p>
+            Staged firmware: <span className="font-semibold text-ink">{staged.filename}</span>
+            {` • ${formatBytes(staged.sizeBytes)}`}
+          </p>
+          {staged.firmwareBuild ? (
+            <p>
+              Build: <span className="font-semibold text-ink">{staged.firmwareBuild}</span>
+            </p>
+          ) : (
+            <p className="text-amber-600">No firmware build marker found in this binary.</p>
+          )}
+          {staged.sha256 ? <p>SHA-256: {shortHash(staged.sha256)}</p> : null}
+        </div>
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">No staged firmware uploaded yet.</p>
       )}
@@ -201,10 +236,15 @@ function TargetCard({ target, selectedUnit, staged, status, onUpload, onTrigger 
         {uploading ? (
           <p className="text-sm text-muted-foreground">Uploading firmware...</p>
         ) : staged ? (
-          <p className="text-sm text-muted-foreground">
-            <span className="font-semibold text-ink">{staged.filename}</span>
-            {` (${formatBytes(staged.sizeBytes)}) • click to replace`}
-          </p>
+          <div className="space-y-1 text-sm text-muted-foreground">
+            <p>
+              <span className="font-semibold text-ink">{staged.filename}</span>
+              {` (${formatBytes(staged.sizeBytes)}) • click to replace`}
+            </p>
+            {staged.firmwareBuild ? (
+              <p className="text-xs">Build: {staged.firmwareBuild}</p>
+            ) : null}
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground">
             Drop a <span className="font-semibold text-ink">.bin</span> file here or click to browse
@@ -217,8 +257,8 @@ function TargetCard({ target, selectedUnit, staged, status, onUpload, onTrigger 
       <button
         type="button"
         className="mt-4 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
-        style={{ backgroundColor: staged && hasSelection && !isActive ? target.color : "#374151" }}
-        disabled={!staged || !hasSelection || isActive || triggering}
+        style={{ backgroundColor: staged && hasSelection && wifiConnected && !isActive ? target.color : "#374151" }}
+        disabled={!staged || !hasSelection || !wifiConnected || isActive || triggering}
         onClick={handleTrigger}
       >
         {triggering
@@ -230,6 +270,23 @@ function TargetCard({ target, selectedUnit, staged, status, onUpload, onTrigger 
               : `Flash ${target.label}`}
       </button>
 
+      {canCancel ? (
+        <button
+          type="button"
+          className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={cancelling}
+          onClick={handleCancel}
+        >
+          {cancelling ? "Sending cancel..." : "Cancel update"}
+        </button>
+      ) : null}
+
+      {!wifiConnected ? (
+        <p className="mt-3 text-sm text-amber-600">
+          Gateway must be connected to WiFi before OTA update
+        </p>
+      ) : null}
+
       {status?.receivedAt ? (
         <p className="mt-3 text-right text-xs text-muted-foreground">
           Last update: {new Date(status.receivedAt).toLocaleTimeString()}
@@ -239,7 +296,7 @@ function TargetCard({ target, selectedUnit, staged, status, onUpload, onTrigger 
   );
 }
 
-export default function OtaPanel() {
+export default function OtaPanel({ sseEvent, sseConnected = false, wifiStatus = null }) {
   const { entriesByKey } = useFleetDataContext();
   const [units, setUnits] = useState([]);
   const [selectedKey, setSelectedKey] = useState("");
@@ -250,7 +307,8 @@ export default function OtaPanel() {
   const [statusByUnit, setStatusByUnit] = useState({});
   const [unitsLoading, setUnitsLoading] = useState(true);
   const [unitsError, setUnitsError] = useState("");
-  const [connected, setConnected] = useState(false);
+  const otaResponseTimersRef = useRef({});
+  const wifiConnected = wifiStatus?.state === "connected";
 
   const selectedUnit = useMemo(
     () => units.find((unit) => buildUnitKey(unit) === selectedKey) || null,
@@ -300,31 +358,36 @@ export default function OtaPanel() {
   }, []);
 
   useEffect(() => {
-    const eventSource = new EventSource(getEventSourceUrl());
+    if (!sseEvent || sseEvent.type !== "ota_status" || !sseEvent.target || !sseEvent.truckId || !sseEvent.containerId) {
+      return;
+    }
 
-    eventSource.onopen = () => setConnected(true);
-    eventSource.onerror = () => setConnected(false);
-    eventSource.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message?.type !== "ota_status" || !message?.target || !message?.truckId || !message?.containerId) {
-          return;
-        }
+    const key = `${sseEvent.truckId}::${sseEvent.containerId}`;
+    setStatusByUnit((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] || createEmptyStatuses()),
+        [sseEvent.target]: sseEvent,
+      },
+    }));
 
-        const key = `${message.truckId}::${message.containerId}`;
-        setStatusByUnit((current) => ({
-          ...current,
-          [key]: {
-            ...(current[key] || createEmptyStatuses()),
-            [message.target]: message,
-          },
-        }));
-      } catch (_error) {
-        // Ignore malformed SSE payloads.
+    const timerKey = `${key}::${sseEvent.target}`;
+    const isServerPending =
+      sseEvent.state === "pending" &&
+      String(sseEvent.message || "").includes("Command sent");
+    if (!isServerPending && otaResponseTimersRef.current[timerKey]) {
+      clearTimeout(otaResponseTimersRef.current[timerKey]);
+      delete otaResponseTimersRef.current[timerKey];
+    }
+  }, [sseEvent]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of Object.values(otaResponseTimersRef.current)) {
+        clearTimeout(timer);
       }
+      otaResponseTimersRef.current = {};
     };
-
-    return () => eventSource.close();
   }, []);
 
   useEffect(() => {
@@ -404,14 +467,80 @@ export default function OtaPanel() {
       throw new Error("Select a truck/container pair first.");
     }
 
-    const response = await apiClient.post(`/ota/trigger/${target}`, {
+    const timerKey = `${selectedUnit.truckId}::${selectedUnit.containerId}::${target}`;
+    if (otaResponseTimersRef.current[timerKey]) {
+      clearTimeout(otaResponseTimersRef.current[timerKey]);
+    }
+
+    otaResponseTimersRef.current[timerKey] = setTimeout(() => {
+      setStatusByUnit((current) => {
+        const unitKey = `${selectedUnit.truckId}::${selectedUnit.containerId}`;
+        return {
+          ...current,
+          [unitKey]: {
+            ...(current[unitKey] || createEmptyStatuses()),
+            [target]: {
+              state: "error",
+              target,
+              truckId: selectedUnit.truckId,
+              containerId: selectedUnit.containerId,
+              message: "No response from device — check gateway WiFi connection",
+              progress: 0,
+              receivedAt: new Date().toISOString(),
+            },
+          },
+        };
+      });
+      delete otaResponseTimersRef.current[timerKey];
+    }, 30000);
+
+    try {
+      const response = await apiClient.post(`/ota/trigger/${target}`, {
+        truckId: selectedUnit.truckId,
+        containerId: selectedUnit.containerId,
+      });
+
+      const data = response.data || {};
+      if (!data.ok) {
+        throw new Error(data.error || "Trigger failed.");
+      }
+    } catch (error) {
+      clearTimeout(otaResponseTimersRef.current[timerKey]);
+      delete otaResponseTimersRef.current[timerKey];
+      throw error;
+    }
+  }
+
+  async function handleCancel(target) {
+    if (!selectedUnit?.truckId || !selectedUnit?.containerId) {
+      throw new Error("Select a truck/container pair first.");
+    }
+
+    const unitKey = `${selectedUnit.truckId}::${selectedUnit.containerId}`;
+    const timerKey = `${unitKey}::${target}`;
+    if (otaResponseTimersRef.current[timerKey]) {
+      clearTimeout(otaResponseTimersRef.current[timerKey]);
+      delete otaResponseTimersRef.current[timerKey];
+    }
+
+    const response = await apiClient.post(`/ota/cancel/${target}`, {
       truckId: selectedUnit.truckId,
       containerId: selectedUnit.containerId,
     });
 
     const data = response.data || {};
     if (!data.ok) {
-      throw new Error(data.error || "Trigger failed.");
+      throw new Error(data.error || "Cancel failed.");
+    }
+
+    if (data.status) {
+      setStatusByUnit((current) => ({
+        ...current,
+        [unitKey]: {
+          ...(current[unitKey] || createEmptyStatuses()),
+          [target]: data.status,
+        },
+      }));
     }
   }
 
@@ -434,7 +563,7 @@ export default function OtaPanel() {
         </div>
 
         <div className="rounded-full border border-border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          {connected ? "Live" : "Reconnecting"}
+          {sseConnected ? "Live" : "Reconnecting"}
         </div>
       </div>
 
@@ -481,8 +610,10 @@ export default function OtaPanel() {
             selectedUnit={selectedUnit}
             staged={stagedByTarget[target.id]}
             status={selectedStatuses[target.id]}
+            wifiConnected={wifiConnected}
             onUpload={handleUpload}
             onTrigger={handleTrigger}
+            onCancel={handleCancel}
           />
         ))}
       </div>

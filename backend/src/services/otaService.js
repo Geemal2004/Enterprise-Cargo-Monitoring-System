@@ -5,8 +5,14 @@ const BROKER_URL =
 const MQTT_USER = process.env.MQTT_USERNAME || "cabin_node";
 const MQTT_PASS = process.env.MQTT_PASSWORD || "6HYUvbJEkeFr9m4";
 const OTA_STATUS_TOPIC_FILTER = "tenant/+/truck/+/ota/+/status";
+const GATEWAY_WIFI_TOPIC_BASE =
+  process.env.GATEWAY_TOPIC_BASE || "tenant/demo/truck/TRUCK01/gateway/wifi";
+const WIFI_SCAN_RESULT_TOPIC_FILTER = "tenant/+/truck/+/gateway/wifi/scan/result";
+const WIFI_STATUS_TOPIC_FILTER = "tenant/+/truck/+/gateway/wifi/status";
 const OTA_TOPIC_PATTERN =
   /^tenant\/([^/]+)\/truck\/([^/]+)\/ota\/(gateway|container)\/(command|status)$/;
+const WIFI_TOPIC_PATTERN =
+  /^tenant\/([^/]+)\/truck\/([^/]+)\/gateway\/wifi\/(scan\/result|status)$/;
 
 let mqttClient = null;
 
@@ -15,6 +21,19 @@ const otaStatusByKey = {};
 const latestStatusByTarget = {};
 const routeContextByKey = {};
 const sseClients = [];
+let latestWifiNetworks = [];
+let latestWifiStatus = {
+  state: "unknown",
+  receivedAt: null,
+};
+const wifiNetworksByKey = {};
+const wifiStatusByKey = {};
+let mqttConnectionState = {
+  connected: false,
+  state: "initializing",
+  lastError: null,
+  updatedAt: new Date().toISOString(),
+};
 
 function normalizeTarget(target) {
   return String(target || "").trim().toLowerCase();
@@ -47,6 +66,23 @@ function parseOtaTopic(topic) {
     truckId: match[2],
     target: match[3],
     direction: match[4],
+  };
+}
+
+function buildWifiKey(tenantCode, truckId) {
+  return `${tenantCode || ""}::${truckId || ""}`;
+}
+
+function parseWifiTopic(topic) {
+  const match = WIFI_TOPIC_PATTERN.exec(String(topic || ""));
+  if (!match) {
+    return null;
+  }
+
+  return {
+    tenantCode: match[1],
+    truckId: match[2],
+    kind: match[3],
   };
 }
 
@@ -90,6 +126,53 @@ function setUnitStatus(context, message) {
   return payload;
 }
 
+function handleWifiScanResult(topic, message) {
+  const context = parseWifiTopic(topic);
+  const networks = Array.isArray(message)
+    ? message
+    : Array.isArray(message?.networks)
+      ? message.networks
+      : [];
+
+  latestWifiNetworks = networks
+    .filter((network) => network && typeof network === "object")
+    .map((network) => ({
+      ssid: String(network.ssid || ""),
+      rssi: Number(network.rssi),
+      secure: Boolean(network.secure),
+    }))
+    .filter((network) => network.ssid);
+  if (context) {
+    wifiNetworksByKey[buildWifiKey(context.tenantCode, context.truckId)] = latestWifiNetworks;
+  }
+
+  broadcastSse({
+    type: "wifi_scan",
+    tenantCode: context?.tenantCode || null,
+    truckId: context?.truckId || null,
+    networks: latestWifiNetworks,
+    receivedAt: new Date().toISOString(),
+  });
+}
+
+function handleWifiStatus(topic, message) {
+  const context = parseWifiTopic(topic);
+  latestWifiStatus = {
+    ...(message && typeof message === "object" ? message : {}),
+    tenantCode: context?.tenantCode || message?.tenantCode || null,
+    truckId: context?.truckId || message?.truckId || null,
+    receivedAt: new Date().toISOString(),
+  };
+  if (context) {
+    wifiStatusByKey[buildWifiKey(context.tenantCode, context.truckId)] = latestWifiStatus;
+  }
+
+  broadcastSse({
+    type: "wifi_status",
+    ...latestWifiStatus,
+  });
+}
+
 function resolveStatusContext(topic, message) {
   const parsed = parseOtaTopic(topic);
   if (!parsed) {
@@ -129,20 +212,42 @@ function getMqttClient() {
   });
 
   mqttClient.on("connect", () => {
+    mqttConnectionState = {
+      connected: true,
+      state: "connected",
+      lastError: null,
+      updatedAt: new Date().toISOString(),
+    };
     console.log("[OTA MQTT] Connected to broker");
-    mqttClient.subscribe(OTA_STATUS_TOPIC_FILTER, { qos: 1 }, (error) => {
+    mqttClient.subscribe(
+      [OTA_STATUS_TOPIC_FILTER, WIFI_SCAN_RESULT_TOPIC_FILTER, WIFI_STATUS_TOPIC_FILTER],
+      { qos: 1 },
+      (error) => {
       if (error) {
         console.error("[OTA MQTT] Subscribe error:", error.message);
         return;
       }
 
       console.log("[OTA MQTT] Subscribed to status topic filter:", OTA_STATUS_TOPIC_FILTER);
-    });
+      console.log("[OTA MQTT] Subscribed to WiFi topic filters:", GATEWAY_WIFI_TOPIC_BASE);
+      }
+    );
   });
 
   mqttClient.on("message", (topic, payload) => {
     try {
       const message = JSON.parse(payload.toString());
+      const wifiContext = parseWifiTopic(topic);
+      if (wifiContext?.kind === "scan/result") {
+        handleWifiScanResult(topic, message);
+        return;
+      }
+
+      if (wifiContext?.kind === "status") {
+        handleWifiStatus(topic, message);
+        return;
+      }
+
       const context = resolveStatusContext(topic, message);
 
       if (!context) {
@@ -156,7 +261,31 @@ function getMqttClient() {
     }
   });
 
+  mqttClient.on("reconnect", () => {
+    mqttConnectionState = {
+      ...mqttConnectionState,
+      connected: false,
+      state: "reconnecting",
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  mqttClient.on("close", () => {
+    mqttConnectionState = {
+      ...mqttConnectionState,
+      connected: false,
+      state: "closed",
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
   mqttClient.on("error", (error) => {
+    mqttConnectionState = {
+      connected: false,
+      state: "error",
+      lastError: error.message,
+      updatedAt: new Date().toISOString(),
+    };
     console.error("[OTA MQTT] Error:", error.message);
   });
 
@@ -199,12 +328,50 @@ function getUnitStatuses(context) {
   };
 }
 
+function getWifiNetworks(context = null) {
+  if (context?.tenantCode && context?.truckId) {
+    return wifiNetworksByKey[buildWifiKey(context.tenantCode, context.truckId)] || [];
+  }
+
+  return latestWifiNetworks;
+}
+
+function getWifiStatus(context = null) {
+  if (context?.tenantCode && context?.truckId) {
+    return wifiStatusByKey[buildWifiKey(context.tenantCode, context.truckId)] || {
+      state: "unknown",
+      tenantCode: context.tenantCode,
+      truckId: context.truckId,
+      receivedAt: null,
+    };
+  }
+
+  return latestWifiStatus;
+}
+
+function getMqttConnectionState() {
+  const client = getMqttClient();
+  return {
+    ...mqttConnectionState,
+    connected: Boolean(client.connected),
+  };
+}
+
 function addSseClient(res) {
   sseClients.push(res);
 
   for (const status of Object.values(otaStatusByKey)) {
     res.write(`data: ${JSON.stringify({ type: "ota_status", ...status })}\n\n`);
   }
+
+  res.write(
+    `data: ${JSON.stringify({
+      type: "wifi_scan",
+      networks: latestWifiNetworks,
+      receivedAt: new Date().toISOString(),
+    })}\n\n`
+  );
+  res.write(`data: ${JSON.stringify({ type: "wifi_status", ...latestWifiStatus })}\n\n`);
 }
 
 function removeSseClient(res) {
@@ -273,6 +440,102 @@ async function triggerOta({ tenantCode, truckId, containerId, target, firmwareUr
   });
 }
 
+async function cancelOta({ tenantCode, truckId, containerId, target }) {
+  return new Promise((resolve, reject) => {
+    const client = getMqttClient();
+    const normalizedTarget = normalizeTarget(target);
+
+    if (!client.connected) {
+      reject(new Error("MQTT client not connected to broker"));
+      return;
+    }
+
+    const command = {
+      cmd: "ota_cancel",
+      target: normalizedTarget,
+      tenantId: tenantCode,
+      truckId,
+      containerId,
+      cancelledAt: new Date().toISOString(),
+    };
+
+    const topic = otaTopic(tenantCode, truckId, normalizedTarget, "command");
+    routeContextByKey[buildRouteKey(tenantCode, truckId, normalizedTarget)] = {
+      tenantCode,
+      truckId,
+      containerId,
+      target: normalizedTarget,
+    };
+
+    client.publish(topic, JSON.stringify(command), { qos: 1, retain: false }, (error) => {
+      if (error) {
+        reject(new Error(`MQTT publish failed: ${error.message}`));
+        return;
+      }
+
+      console.log(`[OTA] Cancel published -> ${topic}`, command);
+
+      const status = setUnitStatus(
+        {
+          tenantCode,
+          truckId,
+          containerId,
+          target: normalizedTarget,
+        },
+        {
+          state: "cancelling",
+          message: "Cancel command sent, waiting for device confirmation",
+          progress: 0,
+          cancelledAt: command.cancelledAt,
+        }
+      );
+
+      resolve(status);
+    });
+  });
+}
+
+async function publishMqttMessage(topic, payload, options = {}) {
+  return new Promise((resolve, reject) => {
+    const client = getMqttClient();
+    let settled = false;
+    const timeoutMs = options.timeoutMs || 5000;
+
+    if (!client.connected) {
+      reject(new Error("MQTT client not connected to broker"));
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`MQTT publish timed out after ${timeoutMs}ms: ${topic}`));
+    }, timeoutMs);
+
+    client.publish(
+      topic,
+      JSON.stringify(payload || {}),
+      {
+        qos: options.qos ?? 1,
+        retain: Boolean(options.retain),
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+
+        if (error) {
+          reject(new Error(`MQTT publish failed: ${error.message}`));
+          return;
+        }
+
+        console.log(`[MQTT] Published -> ${topic}`, payload || {});
+        resolve();
+      }
+    );
+  });
+}
+
 getMqttClient();
 
 module.exports = {
@@ -281,7 +544,12 @@ module.exports = {
   getAllStagedFirmware,
   getOtaStatus,
   getUnitStatuses,
+  getWifiNetworks,
+  getWifiStatus,
+  getMqttConnectionState,
   triggerOta,
+  cancelOta,
+  publishMqttMessage,
   addSseClient,
   removeSseClient,
 };
