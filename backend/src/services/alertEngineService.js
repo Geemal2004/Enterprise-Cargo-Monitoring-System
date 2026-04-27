@@ -13,7 +13,7 @@ function createAlertEngineService(deps) {
       },
       GAS_SPIKE: {
         severity: "WARNING",
-        thresholdNumeric: config.alerts.gasSpikeThresholdRaw,
+        thresholdNumeric: config.alerts.gasSpikeThresholdPpm,
       },
       SHOCK_DETECTED: {
         severity: "CRITICAL",
@@ -163,6 +163,7 @@ function createAlertEngineService(deps) {
     const gasRule = resolveThresholdRule(rules, "GAS_SPIKE");
     const shockRule = resolveThresholdRule(rules, "SHOCK_DETECTED");
     const gpsRule = resolveThresholdRule(rules, "GPS_LOST");
+    const smokePpm = Number.isFinite(telemetry.smokePpm) ? telemetry.smokePpm : null;
 
     const evaluations = [
       {
@@ -183,17 +184,17 @@ function createAlertEngineService(deps) {
       },
       {
         alertType: "GAS_SPIKE",
-        title: "Gas spike detected",
+        title: "Smoke level detected",
         shouldBeOpen:
-          telemetry.gasRaw !== null && telemetry.gasRaw > Number(gasRule.thresholdNumeric),
+          smokePpm !== null && smokePpm > Number(gasRule.thresholdNumeric),
         severity: gasRule.severity,
-        latestValueNumeric: telemetry.gasRaw,
+        latestValueNumeric: smokePpm,
         latestValueBoolean: null,
         thresholdValueNumeric: gasRule.thresholdNumeric,
         message:
-          telemetry.gasRaw !== null
-            ? `Gas sensor value ${telemetry.gasRaw} exceeds threshold ${gasRule.thresholdNumeric}`
-            : "Gas threshold exceeded",
+          smokePpm !== null
+            ? `Smoke level ${smokePpm} ppm exceeds threshold ${gasRule.thresholdNumeric} ppm`
+            : "Smoke threshold exceeded",
         alertRuleId: gasRule.ruleId,
       },
       {

@@ -23,6 +23,9 @@ static const uint32_t SD_RETRY_INTERVAL_MS = 15000;
 
 // Shock threshold based on acceleration magnitude in g units.
 static const float SHOCK_THRESHOLD_G = 1.80f;
+static const float MQ2_EMA_ALPHA = 0.20f;
+static const float MQ2_SMOKE_BASELINE_RAW = 500.0f;
+static const float MQ2_SMOKE_PPM_PER_RAW = 0.35f;
 
 // Canonical pin plan (ESP32-S3 container node)
 static const int PIN_I2C_SDA = 8;
@@ -106,6 +109,8 @@ float lastHumidity = 0.0f;
 float lastPressureHpa = 0.0f;
 float lastTiltDeg = 0.0f;
 bool lastShock = false;
+float lastGasRawEma = 0.0f;
+float lastGasPpm = 0.0f;
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -162,7 +167,7 @@ bool initSDCard() {
   }
 
   if (f.size() == 0) {
-    f.println("seq,ts,real_time,tempC,humidity,pressure,tilt,gasRaw,shock,sdOk");
+    f.println("seq,ts,real_time,tempC,humidity,pressure,tilt,gasRaw,gasPpm,shock,sdOk");
   }
   f.close();
 
@@ -195,7 +200,7 @@ bool appendLogCsv(const CargoPacket &pkt, bool sdFlagValue, bool realTime) {
     return false;
   }
 
-  int written = f.printf("%lu,%lu,%u,%.2f,%.2f,%.2f,%.2f,%u,%u,%u\n",
+  int written = f.printf("%lu,%lu,%u,%.2f,%.2f,%.2f,%.2f,%u,%.2f,%u,%u\n",
                          (unsigned long)pkt.seq,
                          (unsigned long)pkt.ts,
                          realTime ? 1 : 0,
@@ -204,6 +209,7 @@ bool appendLogCsv(const CargoPacket &pkt, bool sdFlagValue, bool realTime) {
                          pkt.pressure,
                          pkt.tilt,
                          (unsigned int)pkt.gasRaw,
+                         pkt.gasPpm,
                          pkt.shock ? 1 : 0,
                          sdFlagValue ? 1 : 0);
   f.close();
@@ -455,6 +461,13 @@ void readSensors(CargoPacket &pkt) {
   // MQ2 analog gas sensor
   const int raw = analogRead(PIN_MQ2_AO);
   pkt.gasRaw = (uint16_t)constrain(raw, 0, 4095);
+  if (lastGasRawEma <= 0.0f) {
+    lastGasRawEma = (float)pkt.gasRaw;
+  } else {
+    lastGasRawEma = (MQ2_EMA_ALPHA * (float)pkt.gasRaw) + ((1.0f - MQ2_EMA_ALPHA) * lastGasRawEma);
+  }
+  lastGasPpm = max(0.0f, (lastGasRawEma - MQ2_SMOKE_BASELINE_RAW) * MQ2_SMOKE_PPM_PER_RAW);
+  pkt.gasPpm = lastGasPpm;
 
   pkt.tempC = lastTempC;
   pkt.humidity = lastHumidity;
@@ -464,7 +477,7 @@ void readSensors(CargoPacket &pkt) {
 }
 
 void printCycleDebug(const CargoPacket &pkt) {
-  Serial.printf("[DATA] seq=%lu ts=%lu temp=%.2fC hum=%.2f%% pressure=%.2fhPa tilt=%.2fdeg gas=%u shock=%u sdOk=%u\n",
+  Serial.printf("[DATA] seq=%lu ts=%lu temp=%.2fC hum=%.2f%% pressure=%.2fhPa tilt=%.2fdeg gasRaw=%u gasPpm=%.2f shock=%u sdOk=%u\n",
                 (unsigned long)pkt.seq,
                 (unsigned long)pkt.ts,
                 pkt.tempC,
@@ -472,6 +485,7 @@ void printCycleDebug(const CargoPacket &pkt) {
                 pkt.pressure,
                 pkt.tilt,
                 (unsigned int)pkt.gasRaw,
+                pkt.gasPpm,
                 pkt.shock ? 1 : 0,
                 pkt.sdOk ? 1 : 0);
 }

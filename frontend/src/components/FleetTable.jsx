@@ -20,6 +20,8 @@ function gasValue(value) {
 function TableStatusPill({ tone = "ok", icon: Icon, children }) {
   const tones = {
     ok: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    online: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    offline: "bg-rose-50 text-rose-700 border-rose-200",
     warning: "bg-amber-50 text-amber-700 border-amber-200",
     critical: "bg-rose-50 text-rose-700 border-rose-200",
     muted: "bg-slate-50 text-slate-600 border-slate-200",
@@ -72,10 +74,12 @@ export default function FleetTable({ entries, alertsByKey }) {
             const deviceStatus = deriveDeviceStatus(entry, deviceAlerts);
 
             let overallStatusIcon = CheckCircle2;
-            let overallTone = "ok";
-            if (deviceStatus.tone === "critical") { overallTone = "critical"; overallStatusIcon = AlertCircle; }
-            else if (deviceStatus.tone === "warning") { overallTone = "warning"; overallStatusIcon = AlertCircle; }
-            else if (deviceStatus.tone === "muted") { overallTone = "muted"; overallStatusIcon = Clock; }
+            let overallTone = deviceStatus.tone || "online";
+            if (deviceStatus.tone === "critical" || deviceStatus.tone === "warning") {
+              overallStatusIcon = AlertCircle;
+            } else if (deviceStatus.tone === "offline" || deviceStatus.tone === "muted") {
+              overallStatusIcon = Clock;
+            }
 
             return (
               <tr 
@@ -105,7 +109,7 @@ export default function FleetTable({ entries, alertsByKey }) {
                     </div>
                     <div className="flex items-center gap-1.5 text-sm text-slate-600">
                       <Wind className="w-4 h-4 text-slate-400" />
-                      {gasValue(gas.mq2Raw)} ppm
+                      {gasValue(gas.smokePpm ?? gas.mq2Raw)} ppm
                     </div>
                   </div>
                 </td>

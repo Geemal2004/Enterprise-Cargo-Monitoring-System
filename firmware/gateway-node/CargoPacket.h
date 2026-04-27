@@ -11,6 +11,7 @@ struct CargoPacket {
   float pressure;
   float tilt;
   uint16_t gasRaw;
+  float gasPpm;
   bool shock;
   bool sdOk;
 };

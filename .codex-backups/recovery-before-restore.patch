@@ -1,0 +1,1208 @@
+diff --git a/.env.example b/.env.example
+index 4effac3..c0f87cb 100644
+--- a/.env.example
++++ b/.env.example
+@@ -9,14 +9,13 @@ BACKEND_PORT=5000
+ FRONTEND_PORT=80
+ 
+ # Frontend API base URL used during Docker image build
+-VITE_API_URL=https://vish85521-cargo.hf.space/api
++VITE_API_URL=/api
+ 
+ # Backend runtime
+ NODE_ENV=production
+ LOG_LEVEL=info
+ API_PREFIX=/api
+ CORS_ORIGIN=*
+-OTA_HOST=https://vish85521-cargo.hf.space
+ 
+ # Authentication / JWT (use long random values, >=32 chars)
+ JWT_ACCESS_SECRET=replace-with-strong-random-access-secret
+diff --git a/backend/.env.example b/backend/.env.example
+index adc430b..b07a859 100644
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -9,7 +9,6 @@ LOG_LEVEL=info
+ PORT=5000
+ API_PREFIX=/api
+ CORS_ORIGIN=*
+-OTA_HOST=https://vish85521-cargo.hf.space
+ 
+ # Authentication / JWT
+ JWT_ACCESS_SECRET=9f1b8fcb63ae4d83b74ac7fa9113b8f4275d8ef9d61f8c6287f2738479f7702d
+diff --git a/backend/src/routes/ota.js b/backend/src/routes/ota.js
+index 1c70dd5..507fb60 100644
+--- a/backend/src/routes/ota.js
++++ b/backend/src/routes/ota.js
+@@ -2,7 +2,6 @@ const express = require("express");
+ const multer = require("multer");
+ const path = require("path");
+ const fs = require("fs");
+-const crypto = require("crypto");
+ const otaService = require("../services/otaService");
+ const { createRequireRolesMiddleware } = require("../middleware/authMiddleware");
+ const { asyncHandler } = require("../utils/asyncHandler");
+@@ -54,20 +53,6 @@ function getFirmwarePath(target) {
+   return path.join(FIRMWARE_DIR, `firmware-${normalizeTarget(target)}.bin`);
+ }
+ 
+-function describeFirmwareFile(filePath) {
+-  const buffer = fs.readFileSync(filePath);
+-  const text = buffer.toString("latin1");
+-  const buildMatch =
+-    /FW_BUILD:([A-Za-z0-9_.:+-]{6,96})/.exec(text) ||
+-    /\b((?:gateway|container)-[A-Za-z0-9_.:+-]{6,96})/.exec(text);
+-
+-  return {
+-    sizeBytes: buffer.length,
+-    sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+-    firmwareBuild: buildMatch ? buildMatch[1] : null,
+-  };
+-}
+-
+ function getRequestedUnit(req) {
+   const truckId = String(req.body?.truckId || req.query?.truckId || "").trim();
+   const containerId = String(req.body?.containerId || req.query?.containerId || "").trim();
+@@ -173,7 +158,7 @@ function resolveOtaHost() {
+     return process.env.OTA_HOST.trim().replace(/\/$/, "");
+   }
+ 
+-  return "https://vish85521-cargo.hf.space";
++  return "http://localhost:3000";
+ }
+ 
+ function createOtaFirmwareHandler() {
+@@ -191,15 +176,9 @@ function createOtaFirmwareHandler() {
+     }
+ 
+     const stat = fs.statSync(firmwarePath);
+-    const descriptor = describeFirmwareFile(firmwarePath);
+     res.setHeader("Content-Type", "application/octet-stream");
+     res.setHeader("Content-Length", stat.size);
+     res.setHeader("Content-Disposition", `attachment; filename="firmware-${target}.bin"`);
+-    res.setHeader("Cache-Control", "no-store");
+-    res.setHeader("X-Firmware-Sha256", descriptor.sha256);
+-    if (descriptor.firmwareBuild) {
+-      res.setHeader("X-Firmware-Build", descriptor.firmwareBuild);
+-    }
+     fs.createReadStream(firmwarePath).pipe(res);
+   };
+ }
+@@ -229,21 +208,10 @@ function createOtaRoutes(services) {
+     }
+ 
+     const target = req.params.target;
+-    const descriptor = describeFirmwareFile(req.file.path);
+-    if (!descriptor.firmwareBuild) {
+-      fs.unlinkSync(req.file.path);
+-      throw new AppError(
+-        "Uploaded firmware does not contain an FW_BUILD marker. Export a fresh application .bin from the current sketch and upload that file.",
+-        400
+-      );
+-    }
+-
+     const staged = {
+       filename: req.file.originalname,
+       sizeBytes: req.file.size,
+       sizeKb: Number((req.file.size / 1024).toFixed(1)),
+-      sha256: descriptor.sha256,
+-      firmwareBuild: descriptor.firmwareBuild,
+       uploadedAt: new Date().toISOString(),
+       path: req.file.path,
+     };
+@@ -327,36 +295,6 @@ function createOtaRoutes(services) {
+     })
+   );
+ 
+-  router.post(
+-    "/cancel/:target",
+-    validateTarget,
+-    asyncHandler(async (req, res) => {
+-      const target = req.params.target;
+-      const requested = getRequestedUnit(req);
+-      const unit = await ensureUnitExists(
+-        services,
+-        requested.tenantCode,
+-        requested.truckId,
+-        requested.containerId
+-      );
+-
+-      const status = await otaService.cancelOta({
+-        tenantCode: unit.tenantCode || requested.tenantCode,
+-        truckId: unit.truckId,
+-        containerId: unit.containerId,
+-        target,
+-      });
+-
+-      res.status(200).json({
+-        ok: true,
+-        target,
+-        truckId: unit.truckId,
+-        containerId: unit.containerId,
+-        status,
+-      });
+-    })
+-  );
+-
+   return router;
+ }
+ 
+diff --git a/backend/src/services/otaService.js b/backend/src/services/otaService.js
+index b5de4db..382f860 100644
+--- a/backend/src/services/otaService.js
++++ b/backend/src/services/otaService.js
+@@ -440,61 +440,6 @@ async function triggerOta({ tenantCode, truckId, containerId, target, firmwareUr
+   });
+ }
+ 
+-async function cancelOta({ tenantCode, truckId, containerId, target }) {
+-  return new Promise((resolve, reject) => {
+-    const client = getMqttClient();
+-    const normalizedTarget = normalizeTarget(target);
+-
+-    if (!client.connected) {
+-      reject(new Error("MQTT client not connected to broker"));
+-      return;
+-    }
+-
+-    const command = {
+-      cmd: "ota_cancel",
+-      target: normalizedTarget,
+-      tenantId: tenantCode,
+-      truckId,
+-      containerId,
+-      cancelledAt: new Date().toISOString(),
+-    };
+-
+-    const topic = otaTopic(tenantCode, truckId, normalizedTarget, "command");
+-    routeContextByKey[buildRouteKey(tenantCode, truckId, normalizedTarget)] = {
+-      tenantCode,
+-      truckId,
+-      containerId,
+-      target: normalizedTarget,
+-    };
+-
+-    client.publish(topic, JSON.stringify(command), { qos: 1, retain: false }, (error) => {
+-      if (error) {
+-        reject(new Error(`MQTT publish failed: ${error.message}`));
+-        return;
+-      }
+-
+-      console.log(`[OTA] Cancel published -> ${topic}`, command);
+-
+-      const status = setUnitStatus(
+-        {
+-          tenantCode,
+-          truckId,
+-          containerId,
+-          target: normalizedTarget,
+-        },
+-        {
+-          state: "cancelling",
+-          message: "Cancel command sent, waiting for device confirmation",
+-          progress: 0,
+-          cancelledAt: command.cancelledAt,
+-        }
+-      );
+-
+-      resolve(status);
+-    });
+-  });
+-}
+-
+ async function publishMqttMessage(topic, payload, options = {}) {
+   return new Promise((resolve, reject) => {
+     const client = getMqttClient();
+@@ -548,7 +493,6 @@ module.exports = {
+   getWifiStatus,
+   getMqttConnectionState,
+   triggerOta,
+-  cancelOta,
+   publishMqttMessage,
+   addSseClient,
+   removeSseClient,
+diff --git a/docker-compose.yml b/docker-compose.yml
+index f084dc8..7c5cdd3 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -19,7 +19,6 @@ services:
+       PORT: 5000
+       API_PREFIX: ${API_PREFIX:-/api}
+       CORS_ORIGIN: ${CORS_ORIGIN:-*}
+-      OTA_HOST: ${OTA_HOST:-https://vish85521-cargo.hf.space}
+       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+@@ -76,7 +75,7 @@ services:
+       context: ./frontend
+       dockerfile: Dockerfile
+       args:
+-        VITE_API_URL: ${VITE_API_URL:-https://vish85521-cargo.hf.space/api}
++        VITE_API_URL: ${VITE_API_URL:-/api}
+     container_name: smart-cargo-frontend
+     restart: unless-stopped
+     depends_on:
+diff --git a/firmware/container-node/CargoPacket.h b/firmware/container-node/CargoPacket.h
+index dd19e3f..d395f85 100644
+--- a/firmware/container-node/CargoPacket.h
++++ b/firmware/container-node/CargoPacket.h
+@@ -11,6 +11,7 @@ struct CargoPacket {
+   float pressure;
+   float tilt;
+   uint16_t gasRaw;
++  float gasPpm;
+   bool shock;
+   bool sdOk;
+ };
+diff --git a/firmware/gateway-node/CargoPacket.h b/firmware/gateway-node/CargoPacket.h
+index c1426ae..f5f73b2 100644
+--- a/firmware/gateway-node/CargoPacket.h
++++ b/firmware/gateway-node/CargoPacket.h
+@@ -11,6 +11,7 @@ struct CargoPacket {
+   float pressure;
+   float tilt;
+   uint16_t gasRaw;
++  float gasPpm;
+   bool shock;
+   bool sdOk;
+ };
+diff --git a/firmware/gateway-node/cargo_gateway_esp32.ino b/firmware/gateway-node/cargo_gateway_esp32.ino
+index 54d78c2..0e274d4 100644
+--- a/firmware/gateway-node/cargo_gateway_esp32.ino
++++ b/firmware/gateway-node/cargo_gateway_esp32.ino
+@@ -3,10 +3,10 @@
+ #define TINY_GSM_RX_BUFFER 1024
+ #define TINY_GSM_DEBUG Serial
+ #define MQTT_MAX_PACKET_SIZE 2048
++#define LED 2
+ 
+ #include <Arduino.h>
+ #include <WiFi.h>
+-#include <WiFiClientSecure.h>
+ #include <esp_now.h>
+ #include <esp_wifi.h>
+ #include <esp_idf_version.h>
+@@ -78,7 +78,6 @@ static const uint32_t DEBUG_BAUD = 115200;
+ static const uint32_t MODEM_BAUD = 9600;
+ static const uint32_t GPS_BAUD = 9600;
+ static const size_t SERIAL_AT_RX_BUFFER_BYTES = 4096;  // must be before SerialAT.begin()
+-static const char FIRMWARE_BUILD[] = "FW_BUILD:gateway-ota-wifi-cancel-led-off-2026-04-26";
+ static const uint32_t GPS_BAUD_SCAN_INTERVAL_MS = 15000;
+ static const uint32_t GPS_STREAM_STALE_MS = 3000;
+ static const uint32_t GPS_WARMUP_MS = 90000;
+@@ -95,11 +94,10 @@ static const uint32_t MIN_PUBLISH_GAP_MS = 800;
+ static const uint16_t MQTT_BUFFER_BYTES = 2048;
+ static const uint32_t TIME_SYNC_INTERVAL_MS = 30000;
+ static const uint32_t MIN_VALID_UNIX_TS = 1704067200UL;
+-static const uint32_t WIFI_CONNECT_TIMEOUT_MS = 45000;
++static const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
+ static const uint32_t WIFI_SCAN_TIMEOUT_MS = 30000;
+ static const uint16_t WIFI_SCAN_MAX_MS_PER_CHANNEL = 120;
+ static const uint32_t OTA_READ_TIMEOUT_MS = 15000;
+-static const uint32_t OTA_SUCCESS_MQTT_FLUSH_MS = 4000;
+ static const uint8_t ESP_NOW_BOOT_CHANNEL = 1;
+ 
+ // -----------------------------------------------------------------------------
+@@ -156,12 +154,9 @@ uint8_t expectedContainerChannel = ESP_NOW_BOOT_CHANNEL;
+ uint8_t pendingWifiChannel = 0;
+ uint8_t pendingWifiBssid[6] = {};
+ bool pendingWifiHasBssid = false;
+-volatile uint8_t lastWifiDisconnectReason = 0;
+-volatile bool wifiGotIpEventPending = false;
+ 
+ bool otaPending = false;
+ bool otaIsForContainer = false;
+-volatile bool otaCancelRequested = false;
+ char otaUrl[256] = {};
+ uint32_t otaExpectedSize = 0;
+ char otaFilename[64] = {};
+@@ -170,7 +165,6 @@ String otaGatewayTopicBase = "tenant/demo/truck/TRUCK01/ota/gateway";
+ String otaContainerTopicBase = "tenant/demo/truck/TRUCK01/ota/container";
+ uint8_t lastGatewayOtaProgress = 255;
+ unsigned long lastGatewayOtaProgressMs = 0;
+-WiFiClient *activeGatewayOtaClient = nullptr;
+ 
+ unsigned long gpsLastByteMs = 0;
+ unsigned long gpsLastBaudScanMs = 0;
+@@ -243,28 +237,6 @@ bool parseBssidString(const char *raw, uint8_t out[6]) {
+   return true;
+ }
+ 
+-const char *wifiReasonName(uint8_t reason) {
+-  switch (reason) {
+-    case 0: return "none";
+-    case 2: return "auth expired";
+-    case 4: return "assoc expired";
+-    case 15: return "4-way handshake timeout";
+-    case 17: return "IE invalid";
+-    case 18: return "group cipher invalid";
+-    case 19: return "pairwise cipher invalid";
+-    case 20: return "AKMP invalid";
+-    case 21: return "unsupported RSN IE version";
+-    case 23: return "802.1x auth failed";
+-    case 24: return "cipher suite rejected";
+-    case 201: return "no AP found";
+-    case 202: return "auth fail";
+-    case 203: return "assoc fail";
+-    case 204: return "handshake timeout";
+-    case 205: return "connection fail";
+-    default: return "unknown";
+-  }
+-}
+-
+ String topicBaseFromSuffix(const char *topic, const char *suffix) {
+   const String topicText(topic ? topic : "");
+   const String suffixText(suffix ? suffix : "");
+@@ -317,7 +289,6 @@ struct ParsedHttpUrl {
+   String host;
+   uint16_t port;
+   String path;
+-  bool https;
+ };
+ 
+ bool ensureNetworkAndGprs();
+@@ -331,38 +302,26 @@ void publishWifiStatus(const char *message = nullptr);
+ void publishWifiScanResult(int networkCount);
+ bool runBoundedWifiScanFallback(const char *reason);
+ int findScannedChannelForSsid(const String &ssid);
+-bool findScannedBssidForSsid(const String &ssid, uint8_t out[6], String &bssidText);
+ void setEspNowPeerChannel(uint8_t channel);
+ bool notifyContainerWifiChannel(uint8_t channel);
+-bool publishOtaStatus(const char *target, const char *state, const char *message, uint8_t progress = 0);
++void publishOtaStatus(const char *target, const char *state, const char *message, uint8_t progress = 0);
+ void finishOtaFailure(const char *target, const char *message, bool abortUpdate = false);
+-void finishOtaCancelled(const char *target);
+-void flushMqttFor(uint32_t durationMs);
+-void publishGatewayRunningStatus();
+ 
+ bool parseHttpUrl(const char *url, ParsedHttpUrl &parts) {
+   String raw = String(url ? url : "");
+   raw.trim();
+ 
+-  String remainder;
+-  parts = ParsedHttpUrl{};
+-  if (raw.startsWith("https://")) {
+-    parts.https = true;
+-    parts.port = 443;
+-    remainder = raw.substring(8);
+-  } else if (raw.startsWith("http://")) {
+-    parts.https = false;
+-    parts.port = 80;
+-    remainder = raw.substring(7);
+-  } else {
+-    Serial.printf("[OTA] Unsupported URL (expected http:// or https://): %s\n", raw.c_str());
++  if (!raw.startsWith("http://")) {
++    Serial.printf("[OTA] Unsupported URL (expected http://): %s\n", raw.c_str());
+     return false;
+   }
+ 
++  String remainder = raw.substring(7);
+   const int slashIndex = remainder.indexOf('/');
+   String hostPort = slashIndex >= 0 ? remainder.substring(0, slashIndex) : remainder;
+ 
+   parts.path = slashIndex >= 0 ? remainder.substring(slashIndex) : "/";
++  parts.port = 80;
+ 
+   const int colonIndex = hostPort.lastIndexOf(':');
+   if (colonIndex >= 0) {
+@@ -398,14 +357,13 @@ bool openWifiHttpStream(WiFiClient &client, const char *url, ParsedHttpUrl &part
+   client.stop();
+   client.setTimeout(15000);
+ 
+-  Serial.printf("[OTA] Opening WiFi %s stream host=%s port=%u path=%s\n",
+-                parts.https ? "HTTPS" : "HTTP",
++  Serial.printf("[OTA] Opening WiFi HTTP stream host=%s port=%u path=%s\n",
+                 parts.host.c_str(),
+                 parts.port,
+                 parts.path.c_str());
+ 
+   if (!client.connect(parts.host.c_str(), parts.port)) {
+-    Serial.println("[OTA] HTTP TCP/TLS connect failed over WiFi");
++    Serial.println("[OTA] HTTP TCP connect failed over WiFi");
+     return false;
+   }
+ 
+@@ -472,28 +430,10 @@ void finishOtaFailure(const char *target, const char *message, bool abortUpdate)
+ 
+   publishOtaStatus(target, "error", message, 0);
+   otaPending = false;
+-  otaCancelRequested = false;
+-}
+-
+-void finishOtaCancelled(const char *target) {
+-  Serial.printf("[OTA] %s cancelled\n", target);
+-  Update.abort();
+-  publishOtaStatus(target, "cancelled", "Update cancelled", 0);
+-  otaPending = false;
+-  otaCancelRequested = false;
+-}
+-
+-const char *firmwareBuildLabel() {
+-  static const char prefix[] = "FW_BUILD:";
+-  if (strncmp(FIRMWARE_BUILD, prefix, strlen(prefix)) == 0) {
+-    return FIRMWARE_BUILD + strlen(prefix);
+-  }
+-
+-  return FIRMWARE_BUILD;
+ }
+ 
+-bool publishOtaStatus(const char *target, const char *state, const char *message, uint8_t progress) {
+-  StaticJsonDocument<512> doc;
++void publishOtaStatus(const char *target, const char *state, const char *message, uint8_t progress) {
++  StaticJsonDocument<384> doc;
+   doc["state"] = state;
+   doc["message"] = message;
+   doc["progress"] = progress;
+@@ -501,39 +441,17 @@ bool publishOtaStatus(const char *target, const char *state, const char *message
+   doc["tenantId"] = TENANT_ID;
+   doc["truckId"] = TRUCK_ID;
+   doc["containerId"] = CONTAINER_ID;
+-  doc["firmwareBuild"] = firmwareBuildLabel();
+   if (otaFilename[0] != '\0') {
+     doc["filename"] = otaFilename;
+   }
+ 
+-  char payload[512] = {};
++  char payload[384] = {};
+   const size_t len = serializeJson(doc, payload, sizeof(payload));
+   const String topic = strcmp(target, "container") == 0
+                          ? otaContainerTopicBase + "/status"
+                          : otaGatewayTopicBase + "/status";
+-  const bool ok = mqtt_client.connected() && mqtt_client.publish(topic.c_str(), payload, len);
+-  Serial.printf("[OTA] %s -> %s (%u%%) mqtt=%u\n", target, state, progress, ok ? 1 : 0);
+-  return ok;
+-}
+-
+-void flushMqttFor(uint32_t durationMs) {
+-  const unsigned long startedMs = millis();
+-  while (millis() - startedMs < durationMs) {
+-    mqtt_client.loop();
+-    delay(50);
+-  }
+-}
+-
+-void publishGatewayRunningStatus() {
+-  if (!mqtt_client.connected()) {
+-    return;
+-  }
+-
+-  if (otaPending) {
+-    return;
+-  }
+-
+-  publishOtaStatus("gateway", "success", "Gateway firmware is running", 100);
++  mqtt_client.publish(topic.c_str(), payload, len);
++  Serial.printf("[OTA] %s -> %s (%u%%)\n", target, state, progress);
+ }
+ 
+ void publishWifiStatus(const char *message) {
+@@ -550,10 +468,6 @@ void publishWifiStatus(const char *message) {
+     doc["channel"] = WiFi.channel();
+   } else {
+     doc["wifiStatusCode"] = (int)WiFi.status();
+-    if (lastWifiDisconnectReason != 0) {
+-      doc["disconnectReason"] = lastWifiDisconnectReason;
+-      doc["disconnectReasonText"] = wifiReasonName(lastWifiDisconnectReason);
+-    }
+   }
+   if (message && message[0] != '\0') {
+     doc["message"] = message;
+@@ -611,18 +525,6 @@ int findScannedChannelForSsid(const String &ssid) {
+   return 0;
+ }
+ 
+-bool findScannedBssidForSsid(const String &ssid, uint8_t out[6], String &bssidText) {
+-  for (size_t i = 0; i < scannedNetworkCacheCount; ++i) {
+-    if (scannedSsidCache[i] == ssid && scannedBssidCache[i].length() == 17) {
+-      bssidText = scannedBssidCache[i];
+-      return parseBssidString(bssidText.c_str(), out);
+-    }
+-  }
+-
+-  bssidText = "";
+-  return false;
+-}
+-
+ bool notifyContainerWifiChannel(uint8_t channel) {
+   if (channel == 0 || channel > 13) {
+     return false;
+@@ -687,7 +589,6 @@ void beginWifiConnect(const String &ssid, const String &pass, bool fromStoredCre
+   if (WiFi.status() == WL_CONNECTED && WiFi.SSID() == ssid) {
+     activeWifiSsid = ssid;
+     wifiState = WIFI_CONNECTED;
+-    lastWifiDisconnectReason = 0;
+     updateEspNowPeerChannel();
+     persistWifiCredentialsIfChanged(activeWifiSsid, pass);
+     publishWifiStatus("Already connected");
+@@ -696,7 +597,6 @@ void beginWifiConnect(const String &ssid, const String &pass, bool fromStoredCre
+ 
+   pendingWifiSsid = ssid;
+   pendingWifiPass = pass;
+-  lastWifiDisconnectReason = 0;
+   pendingWifiChannel = preferredChannel;
+   pendingWifiHasBssid = hasPreferredBssid;
+   if (pendingWifiHasBssid) {
+@@ -723,11 +623,6 @@ void beginWifiConnect(const String &ssid, const String &pass, bool fromStoredCre
+     targetChannel = wifiPrefs.getUChar("chan", 0);
+   }
+ 
+-  String cachedBssidText;
+-  if (!pendingWifiHasBssid && findScannedBssidForSsid(pendingWifiSsid, pendingWifiBssid, cachedBssidText)) {
+-    pendingWifiHasBssid = true;
+-  }
+-
+   if (targetChannel > 0) {
+     notifyContainerWifiChannel((uint8_t)targetChannel);
+   } else {
+@@ -738,9 +633,7 @@ void beginWifiConnect(const String &ssid, const String &pass, bool fromStoredCre
+   delay(250);
+ 
+   if (targetChannel > 0 && pendingWifiHasBssid) {
+-    const char *bssidForLog =
+-        (preferredBssid && preferredBssid[0] != '\0') ? preferredBssid : cachedBssidText.c_str();
+-    Serial.printf("[WIFI] Connecting with channel=%d bssid=%s\n", targetChannel, bssidForLog);
++    Serial.printf("[WIFI] Connecting with channel=%d bssid=%s\n", targetChannel, preferredBssid);
+     WiFi.begin(pendingWifiSsid.c_str(), pendingWifiPass.c_str(), targetChannel, pendingWifiBssid);
+   } else if (targetChannel > 0) {
+     Serial.printf("[WIFI] Connecting with channel=%d\n", targetChannel);
+@@ -851,8 +744,6 @@ void publishWifiScanResult(int networkCount) {
+ }
+ 
+ void processWifiScan(unsigned long nowMs) {
+-  nowMs = millis();
+-
+   if (!wifiScanActive) {
+     return;
+   }
+@@ -890,28 +781,17 @@ void processWifiScan(unsigned long nowMs) {
+ }
+ 
+ void processWifiConnect(unsigned long nowMs) {
+-  nowMs = millis();
+-
+-  const bool isConnected = WiFi.status() == WL_CONNECTED;
+-  if (wifiGotIpEventPending || isConnected) {
+-    wifiGotIpEventPending = false;
+-    if (!isConnected) {
+-      return;
+-    }
+-
+-    if (wifiState != WIFI_CONNECTED) {
+-      activeWifiSsid = pendingWifiSsid.length() > 0 ? pendingWifiSsid : WiFi.SSID();
+-      wifiState = WIFI_CONNECTED;
+-      lastWifiDisconnectReason = 0;
+-      updateEspNowPeerChannel();
+-      persistWifiCredentialsIfChanged(activeWifiSsid, pendingWifiPass);
+-      Serial.printf("[WIFI] Connected, IP=%s\n", WiFi.localIP().toString().c_str());
+-      publishWifiStatus("Connected");
+-    }
++  if (wifiState != WIFI_CONNECTING) {
+     return;
+   }
+ 
+-  if (wifiState != WIFI_CONNECTING) {
++  if (WiFi.status() == WL_CONNECTED) {
++    activeWifiSsid = pendingWifiSsid.length() > 0 ? pendingWifiSsid : WiFi.SSID();
++    wifiState = WIFI_CONNECTED;
++    updateEspNowPeerChannel();
++    persistWifiCredentialsIfChanged(activeWifiSsid, pendingWifiPass);
++    Serial.printf("[WIFI] Connected, IP=%s\n", WiFi.localIP().toString().c_str());
++    publishWifiStatus("Connected");
+     return;
+   }
+ 
+@@ -948,36 +828,22 @@ void performGatewayOta() {
+     return;
+   }
+ 
+-  if (otaCancelRequested) {
+-    finishOtaCancelled("gateway");
+-    return;
+-  }
+-
+   if (WiFi.status() != WL_CONNECTED) {
+     finishOtaFailure("gateway", "Gateway WiFi is not connected");
+     return;
+   }
+ 
+-  ParsedHttpUrl gatewayOtaParts{};
+-  if (!parseHttpUrl(otaUrl, gatewayOtaParts)) {
+-    finishOtaFailure("gateway", "Gateway OTA URL must use http:// or https:// firmware URL");
++  if (strncmp(otaUrl, "http://", 7) != 0) {
++    finishOtaFailure("gateway", "Gateway OTA URL must use plain http:// LAN backend URL");
+     return;
+   }
+ 
+   Serial.printf("[OTA] Download started: %s\n", otaUrl);
+   publishOtaStatus("gateway", "downloading", "Download started over WiFi", 0);
+ 
+-  WiFiClient plainClient;
+-  WiFiClientSecure tlsClient;
+-  WiFiClient *downloadClient = &plainClient;
+-  if (gatewayOtaParts.https) {
+-    tlsClient.setInsecure();
+-    downloadClient = &tlsClient;
+-  }
+-
++  WiFiClient wifiClient;
+   lastGatewayOtaProgress = 255;
+   lastGatewayOtaProgressMs = 0;
+-  activeGatewayOtaClient = downloadClient;
+ 
+   httpUpdate.rebootOnUpdate(false);
+   httpUpdate.onProgress([](int current, int total) {
+@@ -997,38 +863,22 @@ void performGatewayOta() {
+       publishOtaStatus("gateway", "downloading", "Downloading firmware over WiFi", progress);
+       mqtt_client.loop();
+     }
+-
+-    if (otaCancelRequested) {
+-      if (activeGatewayOtaClient) {
+-        activeGatewayOtaClient->stop();
+-      }
+-    }
+   });
+ 
+-  const t_httpUpdate_return result = httpUpdate.update(*downloadClient, otaUrl);
+-  activeGatewayOtaClient = nullptr;
+-  downloadClient->stop();
++  const t_httpUpdate_return result = httpUpdate.update(wifiClient, otaUrl);
++  wifiClient.stop();
+ 
+   switch (result) {
+     case HTTP_UPDATE_OK:
+-      if (otaCancelRequested) {
+-        finishOtaCancelled("gateway");
+-        break;
+-      }
+       publishOtaStatus("gateway", "success", "Update successful, rebooting", 100);
+       Serial.println("[OTA] Update successful, rebooting");
+-      flushMqttFor(OTA_SUCCESS_MQTT_FLUSH_MS);
+-      delay(500);
++      delay(750);
+       ESP.restart();
+       break;
+     case HTTP_UPDATE_NO_UPDATES:
+       finishOtaFailure("gateway", "No update was available");
+       break;
+     case HTTP_UPDATE_FAILED: {
+-      if (otaCancelRequested) {
+-        finishOtaCancelled("gateway");
+-        break;
+-      }
+       String error = httpUpdate.getLastErrorString();
+       if (error.length() == 0) {
+         error = "HTTPUpdate failed";
+@@ -1045,11 +895,6 @@ void performContainerOta() {
+     return;
+   }
+ 
+-  if (otaCancelRequested) {
+-    finishOtaCancelled("container");
+-    return;
+-  }
+-
+   if (WiFi.status() != WL_CONNECTED) {
+     finishOtaFailure("container", "Gateway WiFi is not connected");
+     return;
+@@ -1058,22 +903,10 @@ void performContainerOta() {
+   Serial.printf("[OTA] Downloading container firmware from %s\n", otaUrl);
+   publishOtaStatus("container", "downloading", "Preparing WiFi container download", 0);
+ 
++  WiFiClient wifiClient;
+   ParsedHttpUrl parts{};
+-  if (!parseHttpUrl(otaUrl, parts)) {
+-    finishOtaFailure("container", "Container OTA URL must use http:// or https:// firmware URL");
+-    return;
+-  }
+-
+-  WiFiClient plainClient;
+-  WiFiClientSecure tlsClient;
+-  WiFiClient *downloadClient = &plainClient;
+-  if (parts.https) {
+-    tlsClient.setInsecure();
+-    downloadClient = &tlsClient;
+-  }
+-
+   int32_t totalSize = -1;
+-  if (!openWifiHttpStream(*downloadClient, otaUrl, parts, totalSize)) {
++  if (!openWifiHttpStream(wifiClient, otaUrl, parts, totalSize)) {
+     finishOtaFailure("container", "Could not download container firmware over WiFi");
+     return;
+   }
+@@ -1091,33 +924,22 @@ void performContainerOta() {
+   uint8_t lastProgress = 255;
+   unsigned long lastDataMs = millis();
+ 
+-  while (bytesLeft > 0 && (downloadClient->connected() || downloadClient->available())) {
+-    if (otaCancelRequested) {
+-      downloadClient->stop();
+-      finishOtaCancelled("container");
+-      return;
+-    }
+-
+-    const int availableBytes = downloadClient->available();
++  while (bytesLeft > 0 && (wifiClient.connected() || wifiClient.available())) {
++    const int availableBytes = wifiClient.available();
+     if (availableBytes <= 0) {
+       if (millis() - lastDataMs > OTA_READ_TIMEOUT_MS) {
+-        downloadClient->stop();
++        wifiClient.stop();
+         finishOtaFailure("container", "Timed out while downloading container firmware");
+         return;
+       }
+       mqtt_client.loop();
+-      if (otaCancelRequested) {
+-        downloadClient->stop();
+-        finishOtaCancelled("container");
+-        return;
+-      }
+       maintainConnectivity(millis());
+       delay(10);
+       continue;
+     }
+ 
+     const size_t toRead = min((size_t)OTA_CHUNK_SIZE, min((size_t)availableBytes, (size_t)bytesLeft));
+-    const int got = downloadClient->read(chunkBuffer, toRead);
++    const int got = wifiClient.read(chunkBuffer, toRead);
+     if (got <= 0) {
+       delay(10);
+       continue;
+@@ -1144,16 +966,11 @@ void performContainerOta() {
+     }
+ 
+     mqtt_client.loop();
+-    if (otaCancelRequested) {
+-      downloadClient->stop();
+-      finishOtaCancelled("container");
+-      return;
+-    }
+     maintainConnectivity(millis());
+     delay(20);
+   }
+ 
+-  downloadClient->stop();
++  wifiClient.stop();
+ 
+   if (offset != (uint32_t)totalSize) {
+     finishOtaFailure("container", "Container firmware size mismatch");
+@@ -1171,24 +988,11 @@ void performContainerOta() {
+ 
+ void queueOtaCommand(JsonDocument &doc, const char *topic) {
+   const char *cmd = doc["cmd"] | "";
+-  const char *target = doc["target"] | (strcmp(topic, OTA_CONTAINER_CMD_TOPIC) == 0 ? "container" : "gateway");
+-
+-  if (strcmp(cmd, "ota_cancel") == 0) {
+-    const bool targetIsContainer = strcmp(target, "container") == 0;
+-    const bool matchesActiveTarget = otaPending && (otaIsForContainer == targetIsContainer);
+-    if (matchesActiveTarget) {
+-      otaCancelRequested = true;
+-      Serial.printf("[OTA] Cancel requested for %s\n", target);
+-    } else {
+-      publishOtaStatus(target, "cancelled", "No active update to cancel", 0);
+-    }
+-    return;
+-  }
+-
+   if (strcmp(cmd, "ota_update") != 0) {
+     return;
+   }
+ 
++  const char *target = doc["target"] | (strcmp(topic, OTA_CONTAINER_CMD_TOPIC) == 0 ? "container" : "gateway");
+   const char *url = doc["url"] | "";
+   const char *filename = doc["filename"] | "firmware";
+   if (url[0] == '\0') {
+@@ -1208,7 +1012,6 @@ void queueOtaCommand(JsonDocument &doc, const char *topic) {
+   strncpy(otaFilename, filename, sizeof(otaFilename) - 1);
+   otaExpectedSize = doc["size"] | 0;
+   otaIsForContainer = strcmp(target, "container") == 0;
+-  otaCancelRequested = false;
+   if (otaIsForContainer) {
+     otaContainerTopicBase = topicBaseFromSuffix(topic, "/command");
+   } else {
+@@ -1280,11 +1083,6 @@ void processPendingOta() {
+     return;
+   }
+ 
+-  if (otaCancelRequested) {
+-    finishOtaCancelled(otaIsForContainer ? "container" : "gateway");
+-    return;
+-  }
+-
+   if (otaIsForContainer) {
+     performContainerOta();
+   } else {
+@@ -1445,29 +1243,6 @@ void onEspNowReceive(const uint8_t *senderMac, const uint8_t *data, int len) {
+ }
+ #endif
+ 
+-void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+-  switch (event) {
+-    case ARDUINO_EVENT_WIFI_STA_START:
+-      Serial.println("[WIFI] STA started");
+-      break;
+-    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+-      Serial.printf("[WIFI] Associated to AP, channel=%u\n", (unsigned int)WiFi.channel());
+-      break;
+-    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+-      wifiGotIpEventPending = true;
+-      Serial.printf("[WIFI] Got IP=%s\n", WiFi.localIP().toString().c_str());
+-      break;
+-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+-      lastWifiDisconnectReason = info.wifi_sta_disconnected.reason;
+-      Serial.printf("[WIFI] Disconnected reason=%u (%s)\n",
+-                    (unsigned int)lastWifiDisconnectReason,
+-                    wifiReasonName(lastWifiDisconnectReason));
+-      break;
+-    default:
+-      break;
+-  }
+-}
+-
+ bool consumePacket(CargoPacket &pkt) {
+   bool hasPacket = false;
+   portENTER_CRITICAL(&packetMux);
+@@ -1643,7 +1418,6 @@ bool reconnectMqtt() {
+ 
+   Serial.println("[MQTT] Connected over TLS 1.2");
+   publishWifiStatus();
+-  publishGatewayRunningStatus();
+   return true;
+ }
+ 
+@@ -1756,13 +1530,13 @@ void servicePublish(unsigned long nowMs) {
+ // -----------------------------------------------------------------------------
+ 
+ void setup() {
++  pinMode(LED, OUTPUT);
+   Serial.begin(DEBUG_BAUD);
+   delay(400);
+   bootMs = millis();
+ 
+   Serial.println("\n=== Smart Cargo Gateway Boot ===");
+   Serial.println("Design: ESP32 SSLClient/BearSSL TLS + SIM800L MQTT, WiFi OTA HTTP");
+-  Serial.printf("[FW] Build=%s\n", FIRMWARE_BUILD);
+   Serial.printf("[CFG] APN=%s\n", APN);
+   Serial.printf("[CFG] Topic=%s\n", MQTT_TOPIC);
+   Serial.printf("[CFG] Broker host=%s port=%u\n", MQTT_BROKER_HOST, MQTT_BROKER_PORT);
+@@ -1788,7 +1562,6 @@ void setup() {
+   SerialAT.println("AT+CDNSCFG=\"8.8.8.8\",\"8.8.4.4\"");
+ 
+   WiFi.persistent(false);
+-  WiFi.onEvent(onWifiEvent);
+   WiFi.setSleep(false);
+   WiFi.setAutoReconnect(true);
+   initEspNow();
+@@ -1802,6 +1575,7 @@ void setup() {
+ }
+ 
+ void loop() {
++  digitalWrite(LED, HIGH);
+   const unsigned long nowMs = millis();
+ 
+   gpsPump();
+diff --git a/frontend/README.md b/frontend/README.md
+index b9cdb52..88139c6 100644
+--- a/frontend/README.md
++++ b/frontend/README.md
+@@ -30,7 +30,7 @@ React + Vite dashboard for Smart Cargo Monitoring.
+ 
+ Create .env file from .env.example:
+ 
+-- VITE_API_URL=https://vish85521-cargo.hf.space/api
++- VITE_API_URL=http://localhost:5000/api
+ 
+ ## Run
+ 
+diff --git a/frontend/src/api/client.js b/frontend/src/api/client.js
+index a6c399f..4460f27 100644
+--- a/frontend/src/api/client.js
++++ b/frontend/src/api/client.js
+@@ -1,16 +1,14 @@
+ import axios from "axios";
+ 
+ const AUTH_STORAGE_KEY = "smartcargo.auth.session";
+-const DEFAULT_API_URL = "https://vish85521-cargo.hf.space/api";
+-const API_BASE_URL = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
+ 
+ const apiClient = axios.create({
+-  baseURL: API_BASE_URL,
++  baseURL: import.meta.env.VITE_API_URL || "/api",
+   timeout: 10000,
+ });
+ 
+ const refreshClient = axios.create({
+-  baseURL: API_BASE_URL,
++  baseURL: import.meta.env.VITE_API_URL || "/api",
+   timeout: 10000,
+ });
+ 
+diff --git a/frontend/src/components/MetricIcons.jsx b/frontend/src/components/MetricIcons.jsx
+index c97ff74..6b32eab 100644
+--- a/frontend/src/components/MetricIcons.jsx
++++ b/frontend/src/components/MetricIcons.jsx
+@@ -90,6 +90,26 @@ export function ShockIcon({ className }) {
+   );
+ }
+ 
++export function TiltIcon({ className }) {
++  return (
++    <svg
++      className={className}
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="1.8"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      aria-hidden="true"
++    >
++      <path d="M4 17h16" />
++      <path d="M7 14l10-7" />
++      <path d="M7 14h10" />
++      <path d="M17 7v7" />
++    </svg>
++  );
++}
++
+ export function GpsIcon({ className }) {
+   return (
+     <svg
+diff --git a/frontend/src/components/OtaPanel.jsx b/frontend/src/components/OtaPanel.jsx
+index f218b5e..51db5ec 100644
+--- a/frontend/src/components/OtaPanel.jsx
++++ b/frontend/src/components/OtaPanel.jsx
+@@ -25,8 +25,6 @@ const STATE_META = {
+   pending: { label: "Pending", color: "#f59e0b", icon: "◌" },
+   downloading: { label: "Downloading", color: "#3b82f6", icon: "↓" },
+   flashing: { label: "Flashing", color: "#8b5cf6", icon: "⚡" },
+-  cancelling: { label: "Cancelling", color: "#f97316", icon: "!" },
+-  cancelled: { label: "Cancelled", color: "#6b7280", icon: "×" },
+   success: { label: "Updated", color: "#10b981", icon: "✓" },
+   error: { label: "Failed", color: "#ef4444", icon: "✕" },
+ };
+@@ -41,10 +39,6 @@ function formatBytes(bytes) {
+   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+ }
+ 
+-function shortHash(hash) {
+-  return hash ? String(hash).slice(0, 12) : "";
+-}
+-
+ function buildUnitKey(unit) {
+   return `${unit?.truckId || ""}::${unit?.containerId || ""}`;
+ }
+@@ -67,16 +61,14 @@ function UnitStatusPill({ unit }) {
+   );
+ }
+ 
+-function TargetCard({ target, selectedUnit, staged, status, wifiConnected, onUpload, onTrigger, onCancel }) {
++function TargetCard({ target, selectedUnit, staged, status, wifiConnected, onUpload, onTrigger }) {
+   const [dragging, setDragging] = useState(false);
+   const [uploading, setUploading] = useState(false);
+   const [triggering, setTriggering] = useState(false);
+-  const [cancelling, setCancelling] = useState(false);
+   const [error, setError] = useState("");
+ 
+   const meta = STATE_META[status?.state] || STATE_META.idle;
+-  const isActive = ["pending", "downloading", "flashing", "cancelling"].includes(status?.state);
+-  const canCancel = ["pending", "downloading", "flashing"].includes(status?.state);
++  const isActive = ["pending", "downloading", "flashing"].includes(status?.state);
+   const hasSelection = Boolean(selectedUnit?.truckId && selectedUnit?.containerId);
+ 
+   async function handleFile(file) {
+@@ -124,24 +116,6 @@ function TargetCard({ target, selectedUnit, staged, status, wifiConnected, onUpl
+     }
+   }
+ 
+-  async function handleCancel() {
+-    if (!hasSelection) {
+-      setError("Select a truck/container pair first.");
+-      return;
+-    }
+-
+-    setError("");
+-    setCancelling(true);
+-
+-    try {
+-      await onCancel(target.id);
+-    } catch (cancelError) {
+-      setError(cancelError.message || "Cancel failed.");
+-    } finally {
+-      setCancelling(false);
+-    }
+-  }
+-
+   return (
+     <article className="rounded-3xl border border-border bg-card p-6 shadow-card">
+       <div className="flex items-start justify-between gap-4">
+@@ -177,20 +151,10 @@ function TargetCard({ target, selectedUnit, staged, status, wifiConnected, onUpl
+       {status?.message ? <p className="mt-4 text-sm text-ink">{status.message}</p> : null}
+ 
+       {staged ? (
+-        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+-          <p>
+-            Staged firmware: <span className="font-semibold text-ink">{staged.filename}</span>
+-            {` • ${formatBytes(staged.sizeBytes)}`}
+-          </p>
+-          {staged.firmwareBuild ? (
+-            <p>
+-              Build: <span className="font-semibold text-ink">{staged.firmwareBuild}</span>
+-            </p>
+-          ) : (
+-            <p className="text-amber-600">No firmware build marker found in this binary.</p>
+-          )}
+-          {staged.sha256 ? <p>SHA-256: {shortHash(staged.sha256)}</p> : null}
+-        </div>
++        <p className="mt-2 text-xs text-muted-foreground">
++          Staged firmware: <span className="font-semibold text-ink">{staged.filename}</span>
++          {` • ${formatBytes(staged.sizeBytes)}`}
++        </p>
+       ) : (
+         <p className="mt-2 text-xs text-muted-foreground">No staged firmware uploaded yet.</p>
+       )}
+@@ -236,15 +200,10 @@ function TargetCard({ target, selectedUnit, staged, status, wifiConnected, onUpl
+         {uploading ? (
+           <p className="text-sm text-muted-foreground">Uploading firmware...</p>
+         ) : staged ? (
+-          <div className="space-y-1 text-sm text-muted-foreground">
+-            <p>
+-              <span className="font-semibold text-ink">{staged.filename}</span>
+-              {` (${formatBytes(staged.sizeBytes)}) • click to replace`}
+-            </p>
+-            {staged.firmwareBuild ? (
+-              <p className="text-xs">Build: {staged.firmwareBuild}</p>
+-            ) : null}
+-          </div>
++          <p className="text-sm text-muted-foreground">
++            <span className="font-semibold text-ink">{staged.filename}</span>
++            {` (${formatBytes(staged.sizeBytes)}) • click to replace`}
++          </p>
+         ) : (
+           <p className="text-sm text-muted-foreground">
+             Drop a <span className="font-semibold text-ink">.bin</span> file here or click to browse
+@@ -270,17 +229,6 @@ function TargetCard({ target, selectedUnit, staged, status, wifiConnected, onUpl
+               : `Flash ${target.label}`}
+       </button>
+ 
+-      {canCancel ? (
+-        <button
+-          type="button"
+-          className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+-          disabled={cancelling}
+-          onClick={handleCancel}
+-        >
+-          {cancelling ? "Sending cancel..." : "Cancel update"}
+-        </button>
+-      ) : null}
+-
+       {!wifiConnected ? (
+         <p className="mt-3 text-sm text-amber-600">
+           Gateway must be connected to WiFi before OTA update
+@@ -511,39 +459,6 @@ export default function OtaPanel({ sseEvent, sseConnected = false, wifiStatus =
+     }
+   }
+ 
+-  async function handleCancel(target) {
+-    if (!selectedUnit?.truckId || !selectedUnit?.containerId) {
+-      throw new Error("Select a truck/container pair first.");
+-    }
+-
+-    const unitKey = `${selectedUnit.truckId}::${selectedUnit.containerId}`;
+-    const timerKey = `${unitKey}::${target}`;
+-    if (otaResponseTimersRef.current[timerKey]) {
+-      clearTimeout(otaResponseTimersRef.current[timerKey]);
+-      delete otaResponseTimersRef.current[timerKey];
+-    }
+-
+-    const response = await apiClient.post(`/ota/cancel/${target}`, {
+-      truckId: selectedUnit.truckId,
+-      containerId: selectedUnit.containerId,
+-    });
+-
+-    const data = response.data || {};
+-    if (!data.ok) {
+-      throw new Error(data.error || "Cancel failed.");
+-    }
+-
+-    if (data.status) {
+-      setStatusByUnit((current) => ({
+-        ...current,
+-        [unitKey]: {
+-          ...(current[unitKey] || createEmptyStatuses()),
+-          [target]: data.status,
+-        },
+-      }));
+-    }
+-  }
+-
+   const unitOptions = units.map((unit) => ({
+     key: buildUnitKey(unit),
+     label: `${unit.truckId} / ${unit.containerId}${unit.fleetId ? ` • ${unit.fleetId}` : ""}`,
+@@ -613,7 +528,6 @@ export default function OtaPanel({ sseEvent, sseConnected = false, wifiStatus =
+             wifiConnected={wifiConnected}
+             onUpload={handleUpload}
+             onTrigger={handleTrigger}
+-            onCancel={handleCancel}
+           />
+         ))}
+       </div>
+diff --git a/frontend/src/pages/AnalyticsPage.jsx b/frontend/src/pages/AnalyticsPage.jsx
+index bfe755e..05c5f42 100644
+--- a/frontend/src/pages/AnalyticsPage.jsx
++++ b/frontend/src/pages/AnalyticsPage.jsx
+@@ -44,16 +44,15 @@ export default function AnalyticsPage() {
+   }, [gpsMarkers]);
+ 
+   return (
+-    <div className="page-grid">
+-      <section className="panel-surface">
+-        <div className="panel-headline">
++    <div className="analytics-map-page">
++      <section className="analytics-map-shell">
++        <div className="analytics-map-overlay">
+           <h2>Analytics Map</h2>
+           <p>All active containers with GPS fixes on a single view.</p>
++          {error ? <div className="error-box">{error}</div> : null}
+         </div>
+ 
+-        {error ? <div className="error-box">{error}</div> : null}
+-
+-        <div className="map-wrap">
++        <div className="analytics-map-wrap">
+           <Map center={mapCenter} zoom={6.2} scrollZoom={true} touchZoomRotate={true}>
+             <MapControls position="bottom-right" showLocate={true} showZoom={true} />
+             {gpsMarkers.map((marker) => (
+@@ -71,11 +70,11 @@ export default function AnalyticsPage() {
+               <span className="muted-text">Loading telemetry...</span>
+             </div>
+           ) : null}
+-        </div>
+ 
+-        <p className="chart-footnote">
+-          Showing {gpsMarkers.length} active container locations.
+-        </p>
++          <p className="analytics-map-count">
++            Showing {gpsMarkers.length} active container locations.
++          </p>
++        </div>
+       </section>
+     </div>
+   );
+diff --git a/frontend/src/pages/OtaPage.jsx b/frontend/src/pages/OtaPage.jsx
+index f8f54f6..3073428 100644
+--- a/frontend/src/pages/OtaPage.jsx
++++ b/frontend/src/pages/OtaPage.jsx
+@@ -2,10 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
+ import OtaPanel from "../components/OtaPanel";
+ import WifiPanel from "../components/WifiPanel";
+ 
+-const DEFAULT_API_URL = "https://vish85521-cargo.hf.space/api";
+-
+ function getEventSourceUrl() {
+-  const sseBase = (import.meta.env.VITE_API_URL || DEFAULT_API_URL).replace(/\/api$/, "");
++  const sseBase =
++    (import.meta.env.VITE_API_URL || "").replace(/\/api$/, "") || window.location.origin;
+   return `${sseBase}/api/ota/events`;
+ }
+ 

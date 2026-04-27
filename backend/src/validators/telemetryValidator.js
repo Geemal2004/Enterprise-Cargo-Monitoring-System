@@ -102,6 +102,7 @@ function validateAndNormalizeTelemetry(topicInfo, payload) {
 
   const temperatureC = toNullableNumber(env.temperatureC);
   const gasRaw = toNullableNumber(gas.mq2Raw);
+  const smokePpm = toNullableNumber(gas.smokePpm);
   const shock = toNullableBoolean(motion.shock);
 
   if (temperatureC === null) {
@@ -137,6 +138,7 @@ function validateAndNormalizeTelemetry(topicInfo, payload) {
     tiltDeg: toNullableNumber(motion.tiltDeg),
     shock: Boolean(shock),
     gasRaw,
+    smokePpm,
     gasAlert: Boolean(toNullableBoolean(gas.alert)),
     sdOk: toNullableBoolean(statusCandidate.sdOk),
     gpsFix:

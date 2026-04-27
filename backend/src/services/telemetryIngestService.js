@@ -65,6 +65,7 @@ function createTelemetryIngestService(deps) {
       tiltDeg: normalized.tiltDeg,
       shock: normalized.shock,
       gasRaw: normalized.gasRaw,
+      smokePpm: normalized.smokePpm,
       gasAlert: normalized.gasAlert,
       sdOk: normalized.sdOk,
       gpsFix: normalized.gpsFix,

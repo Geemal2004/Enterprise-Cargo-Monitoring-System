@@ -99,9 +99,9 @@ export default function DashboardPage() {
               iconTone="icon-indigo"
             />
             <StatusCard
-              title="Gas MQ2"
-              value={typeof gas.mq2Raw === "number" ? `${gas.mq2Raw}` : "-"}
-              subtitle="gas.mq2Raw"
+              title="Smoke"
+              value={typeof gas.smokePpm === "number" ? `${Math.round(gas.smokePpm)} ppm` : "-"}
+              subtitle="gas.smokePpm"
               icon={<GasIcon />}
               iconTone="icon-emerald"
             />

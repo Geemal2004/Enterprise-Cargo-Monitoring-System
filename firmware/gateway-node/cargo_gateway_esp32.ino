@@ -100,6 +100,7 @@ static const uint32_t WIFI_SCAN_TIMEOUT_MS = 30000;
 static const uint16_t WIFI_SCAN_MAX_MS_PER_CHANNEL = 120;
 static const uint32_t OTA_READ_TIMEOUT_MS = 15000;
 static const uint32_t OTA_SUCCESS_MQTT_FLUSH_MS = 4000;
+static const float SMOKE_ALERT_THRESHOLD_PPM = 300.0f;
 static const uint8_t ESP_NOW_BOOT_CHANNEL = 1;
 
 // -----------------------------------------------------------------------------
@@ -1672,7 +1673,7 @@ bool publishTelemetry(const CargoPacket &pkt) {
   readGpsSnapshot(lat, lon, speedKph, gpsFix);
   uint32_t ts = resolveTimestamp(pkt, usedGpsTime);
 
-  StaticJsonDocument<640> doc;
+  StaticJsonDocument<768> doc;
   doc["tenantId"] = TENANT_ID;
   doc["fleetId"] = FLEET_ID;
   doc["truckId"] = TRUCK_ID;
@@ -1698,14 +1699,15 @@ bool publishTelemetry(const CargoPacket &pkt) {
 
   JsonObject gasObj = doc.createNestedObject("gas");
   gasObj["mq2Raw"] = pkt.gasRaw;
-  gasObj["alert"] = pkt.gasRaw > 1500;
+  gasObj["smokePpm"] = pkt.gasPpm;
+  gasObj["alert"] = pkt.gasPpm > SMOKE_ALERT_THRESHOLD_PPM;
 
   JsonObject statusObj = doc.createNestedObject("status");
   statusObj["sdOk"] = pkt.sdOk;
   statusObj["gpsFix"] = gpsFix;
   statusObj["uplink"] = "gsm";
 
-  char payload[640];
+  char payload[768];
   size_t payloadLen = serializeJson(doc, payload, sizeof(payload));
 
   const size_t topicLen = strlen(MQTT_TOPIC);
@@ -1814,13 +1816,14 @@ void loop() {
   if (consumePacket(pkt)) {
     publishPacketData = pkt;
     publishPending = true;
-    Serial.printf("[ESP-NOW] RX seq=%lu temp=%.2f hum=%.2f pressure=%.2f tilt=%.2f gas=%u shock=%u sdOk=%u\n",
+    Serial.printf("[ESP-NOW] RX seq=%lu temp=%.2f hum=%.2f pressure=%.2f tilt=%.2f gasRaw=%u gasPpm=%.2f shock=%u sdOk=%u\n",
                   (unsigned long)pkt.seq,
                   pkt.tempC,
                   pkt.humidity,
                   pkt.pressure,
                   pkt.tilt,
                   (unsigned int)pkt.gasRaw,
+                  pkt.gasPpm,
                   pkt.shock ? 1 : 0,
                   pkt.sdOk ? 1 : 0);
   }

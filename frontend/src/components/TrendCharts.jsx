@@ -34,10 +34,10 @@ const chartConfigs = [
     unit: " hPa",
   },
   {
-    key: "gasRaw",
-    name: "Gas Level",
+    key: "smokePpm",
+    name: "Smoke (ppm)",
     color: "#d97706",
-    unit: "",
+    unit: " ppm",
   },
 ];
 
@@ -118,7 +118,7 @@ export default function TrendCharts({ points, hasBackendHistory, loading }) {
                     </ScatterChart>
                   ) : null}
 
-                  {config.key === "gasRaw" ? (
+                  {config.key === "smokePpm" ? (
                     <BarChart data={points} margin={{ top: 12, right: 12, left: 0, bottom: 6 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e3eaf2" />
                       <XAxis dataKey="label" minTickGap={30} stroke="#64748b" tick={{ fontSize: 10 }} />

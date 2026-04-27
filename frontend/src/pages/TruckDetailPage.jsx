@@ -306,9 +306,9 @@ export default function TruckDetailPage() {
           iconTone="icon-indigo"
         />
         <StatusCard
-          title="Gas Level"
-          value={typeof gas.mq2Raw === "number" ? `${Math.round(gas.mq2Raw)}` : "-"}
-          subtitle="Air quality gas index"
+          title="Smoke"
+          value={typeof gas.smokePpm === "number" ? `${Math.round(gas.smokePpm)} ppm` : "-"}
+          subtitle="Air quality smoke estimate"
           icon={<GasIcon />}
           iconTone="icon-emerald"
         />

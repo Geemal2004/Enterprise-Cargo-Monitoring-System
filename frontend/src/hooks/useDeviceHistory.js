@@ -23,7 +23,8 @@ export function useDeviceHistory(truckId, containerId, liveFallbackPoints) {
         if (cancelled) return;
 
         const points = extractHistoryFromPayload(payload);
-        if (points.length > 1) {
+        const hasSmokePpm = points.some((point) => typeof point.smokePpm === "number");
+        if (points.length > 1 && hasSmokePpm) {
           setHistoryPoints(points);
           setSource("backend");
         } else {

@@ -193,7 +193,7 @@ const config = {
   },
   alerts: {
     highTemperatureThresholdC: readNumber("ALERT_HIGH_TEMPERATURE_THRESHOLD_C", 35),
-    gasSpikeThresholdRaw: readNumber("ALERT_GAS_SPIKE_THRESHOLD_RAW", 1500),
+    gasSpikeThresholdPpm: readNumber("ALERT_GAS_SPIKE_THRESHOLD_PPM", 300),
     autoResolveShock: readBool("ALERT_AUTO_RESOLVE_SHOCK", false),
     offlineThresholdMs: readNumber("OFFLINE_THRESHOLD_MS", 30000),
   },

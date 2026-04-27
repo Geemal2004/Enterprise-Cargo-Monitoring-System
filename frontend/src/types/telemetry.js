@@ -78,6 +78,7 @@ export function extractTelemetry(entry) {
       gas: {
         ...gas,
         mq2Raw: asNumberOrNull(gas.mq2Raw),
+        smokePpm: asNumberOrNull(gas.smokePpm ?? gas.ppm ?? gas.mq2Raw),
         alert: asBooleanOrNull(gas.alert) ?? Boolean(gas.alert),
       },
       motion: {
@@ -172,6 +173,7 @@ function buildHistoryPoint(point, index) {
     humidityPct: asNumberOrNull(env.humidityPct ?? point.humidityPct),
     pressureHpa: asNumberOrNull(env.pressureHpa ?? point.pressureHpa),
     gasRaw: asNumberOrNull(gas.mq2Raw ?? point.gasRaw),
+    smokePpm: asNumberOrNull(gas.smokePpm ?? gas.ppm ?? point.smokePpm ?? gas.mq2Raw ?? point.gasRaw),
   };
 }
 
@@ -188,7 +190,8 @@ export function extractHistoryPoints(entry) {
         point.temperatureC !== null ||
         point.humidityPct !== null ||
         point.pressureHpa !== null ||
-        point.gasRaw !== null
+        point.gasRaw !== null ||
+        point.smokePpm !== null
     );
 }
 
@@ -382,7 +385,8 @@ export function pushLiveHistory(previousByKey, entries, maxPoints = 72) {
       last.temperatureC === point.temperatureC &&
       last.humidityPct === point.humidityPct &&
       last.pressureHpa === point.pressureHpa &&
-      last.gasRaw === point.gasRaw;
+      last.gasRaw === point.gasRaw &&
+      last.smokePpm === point.smokePpm;
 
     if (!isDuplicate) {
       current.push(point);

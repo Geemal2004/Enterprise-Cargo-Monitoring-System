@@ -44,16 +44,16 @@ export default function AnalyticsPage() {
   }, [gpsMarkers]);
 
   return (
-    <div className="page-grid">
-      <section className="panel-surface">
-        <div className="panel-headline">
+    <div className="analytics-map-page">
+      <section className="analytics-map-shell">
+        <div className="analytics-map-overlay">
           <h2>Analytics Map</h2>
           <p>All active containers with GPS fixes on a single view.</p>
         </div>
 
         {error ? <div className="error-box">{error}</div> : null}
 
-        <div className="map-wrap">
+        <div className="analytics-map-wrap">
           <Map center={mapCenter} zoom={6.2} scrollZoom={true} touchZoomRotate={true}>
             <MapControls position="bottom-right" showLocate={true} showZoom={true} />
             {gpsMarkers.map((marker) => (
@@ -73,7 +73,7 @@ export default function AnalyticsPage() {
           ) : null}
         </div>
 
-        <p className="chart-footnote">
+        <p className="analytics-map-count">
           Showing {gpsMarkers.length} active container locations.
         </p>
       </section>

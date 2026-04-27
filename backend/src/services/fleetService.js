@@ -1,5 +1,15 @@
 const { AppError } = require("../utils/appError");
 
+function smokePpmFromRow(row) {
+  const rawValue =
+    row.raw_payload?.gas?.smokePpm ??
+    row.raw_payload?.gas?.ppm ??
+    row.raw_payload?.smokePpm ??
+    row.gas_raw;
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function mapLatestRowToApi(row) {
   return {
     key: `${row.truck_code}::${row.container_code}`,
@@ -23,6 +33,7 @@ function mapLatestRowToApi(row) {
       },
       gas: {
         mq2Raw: row.gas_raw,
+        smokePpm: smokePpmFromRow(row),
         alert: row.gas_alert,
       },
       motion: {
@@ -143,6 +154,7 @@ function createFleetService(deps) {
           },
           gas: {
             mq2Raw: row.gas_raw,
+            smokePpm: smokePpmFromRow(row),
             alert: row.gas_alert,
           },
           motion: {
@@ -169,6 +181,7 @@ function createFleetService(deps) {
         },
         gas: {
           mq2Raw: row.gas_raw,
+          smokePpm: smokePpmFromRow(row),
           alert: row.gas_alert,
         },
         motion: {
