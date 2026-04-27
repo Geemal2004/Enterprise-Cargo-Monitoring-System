@@ -327,6 +327,29 @@ body {
   font-size: 0.82rem;
 }
 
+.ai-insight-box {
+  margin-top: 14px;
+  background: linear-gradient(145deg, #f8fbff 0%, #eaf2fc 100%);
+  border: 1px solid #c9daea;
+  border-left: 4px solid #0052cc;
+  padding: 16px;
+  border-radius: 8px;
+  color: #172b4d;
+  font-size: 1rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ai-insight-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: #0052cc;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
 .summary-success {
   border-top: 3px solid #22a06b;
 }
@@ -1055,6 +1078,10 @@ body {
   }
 
   .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row {
     grid-template-columns: 1fr;
   }
 

@@ -13,6 +13,19 @@ function createReportsRoutes(services) {
 
   router.use(requireReportsRead);
 
+  function resolveManagerScope(req) {
+    if (req.auth?.isSuperAdmin) {
+      return null;
+    }
+
+    const roles = (req.auth?.roles || []).map((role) => String(role).toLowerCase());
+    if (roles.includes("admin") || roles.includes("tenant_admin")) {
+      return null;
+    }
+
+    return roles.includes("fleet_manager") ? req.auth.id : null;
+  }
+
   router.get(
     "/fleet-summary",
     asyncHandler(async (req, res) => {
@@ -41,6 +54,18 @@ function createReportsRoutes(services) {
       const payload = await services.reportsService.getDeviceHealthSummaryReport({
         ...req.query,
         tenantCode: req.context.tenantCode || null,
+      });
+      res.status(200).json(payload);
+    })
+  );
+
+  router.post(
+    "/container-day-summary",
+    asyncHandler(async (req, res) => {
+      const payload = await services.reportsService.getContainerDayAiSummary({
+        ...(req.body || {}),
+        tenantCode: req.context.tenantCode || null,
+        managerUserId: resolveManagerScope(req),
       });
       res.status(200).json(payload);
     })

@@ -1607,6 +1607,11 @@ bool reconnectMqtt() {
   raw_tcp_transport.stop();
   secure_client.clearWriteError();
   raw_tcp_transport.clearWriteError();
+  
+  // Expand timeouts for the intensive TLS handshake over a slow serial link
+  secure_client.setTimeout(35000);
+  raw_tcp_transport.setTimeout(35000);
+  
   Serial.println("[MQTT] Socket cleanup done");
 
   if (!ensureNetworkAndGprs()) return false;

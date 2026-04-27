@@ -96,6 +96,18 @@ Required JWT variables:
 - `JWT_ISSUER` (default: `smart-cargo-backend`)
 - `JWT_AUDIENCE` (default: `smart-cargo-api`)
 
+AI summary variables (Gemini):
+
+- `GEMINI_API_KEY_BASE64` (required for Gemini output; keep base64-encoded)
+- `GEMINI_MODEL` (default: `gemini-flash-lite-latest`)
+- `GEMINI_API_BASE_URL` (default: `https://generativelanguage.googleapis.com/v1beta`)
+- `AI_TRIP_SUMMARY_ENABLED` (default: `true`)
+- `AI_DAILY_SUMMARY_ENABLED` (default: `true`)
+- `AI_DAILY_SUMMARY_TIMEOUT_MS` (default: `15000`)
+- `AI_DAILY_SUMMARY_MAX_POINTS` (default: `96`)
+- `AI_DAILY_SUMMARY_BUCKET_MINUTES` (default: `15`)
+- `AI_DAILY_SUMMARY_SYSTEM_PROMPT` (optional override for system prompt)
+
 Note:
 
 - `backend/.env` is for standalone backend runs only.
@@ -226,6 +238,7 @@ Telemetry and dashboard:
 - `GET /api/reports/fleet-summary`
 - `GET /api/reports/alert-summary`
 - `GET /api/reports/device-health-summary`
+- `POST /api/reports/container-day-summary` (body: truckId, containerId, cargoType, day)
 
 Admin and business:
 

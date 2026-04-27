@@ -420,8 +420,177 @@ async function getDeviceHealthSummaryReport(pool, filters) {
   };
 }
 
+async function getContainerDayTelemetrySummary(pool, filters) {
+  const {
+    tenantCode = null,
+    truckCode,
+    containerCode,
+    from,
+    to,
+    bucketInterval,
+    maxPoints,
+    managerUserId = null,
+  } = filters;
+
+  const metricsResult = await pool.query(
+    `
+      WITH scoped AS (
+        SELECT
+          th.occurred_at,
+          th.received_at,
+          th.temperature_c,
+          th.humidity_pct,
+          th.pressure_hpa,
+          th.speed_kph,
+          th.tilt_deg,
+          th.gas_raw,
+          th.gas_alert,
+          th.shock,
+          th.gps_fix
+        FROM telemetry_history th
+        JOIN tenants t
+          ON t.id = th.tenant_id
+        JOIN trucks tr
+          ON tr.id = th.truck_id
+         AND tr.tenant_id = th.tenant_id
+        JOIN containers c
+          ON c.id = th.container_id
+         AND c.tenant_id = th.tenant_id
+        LEFT JOIN fleet_manager_assignments fma
+          ON fma.tenant_id = th.tenant_id
+         AND fma.container_id = th.container_id
+         AND fma.status = 'ACTIVE'
+         AND fma.unassigned_at IS NULL
+        WHERE tr.truck_code = $1
+          AND c.container_code = $2
+          AND ($3::text IS NULL OR t.tenant_code = $3)
+          AND th.occurred_at >= $4
+          AND th.occurred_at < $5
+          AND ($6::uuid IS NULL OR fma.manager_user_id = $6)
+      )
+      SELECT
+        COUNT(*)::int AS sample_count,
+        MIN(occurred_at) AS first_point_at,
+        MAX(occurred_at) AS last_point_at,
+        MIN(received_at) AS first_received_at,
+        MAX(received_at) AS last_received_at,
+        MIN(temperature_c) AS temperature_min,
+        AVG(temperature_c) AS temperature_avg,
+        MAX(temperature_c) AS temperature_max,
+        MIN(humidity_pct) AS humidity_min,
+        AVG(humidity_pct) AS humidity_avg,
+        MAX(humidity_pct) AS humidity_max,
+        MIN(pressure_hpa) AS pressure_min,
+        AVG(pressure_hpa) AS pressure_avg,
+        MAX(pressure_hpa) AS pressure_max,
+        MIN(speed_kph) AS speed_min,
+        AVG(speed_kph) AS speed_avg,
+        MAX(speed_kph) AS speed_max,
+        AVG(gas_raw) AS gas_avg,
+        MAX(gas_raw) AS gas_max,
+        SUM(CASE WHEN gas_alert THEN 1 ELSE 0 END)::int AS gas_alert_count,
+        SUM(CASE WHEN shock THEN 1 ELSE 0 END)::int AS shock_count,
+        MAX(tilt_deg) AS tilt_max,
+        SUM(CASE WHEN COALESCE(gps_fix, FALSE) THEN 1 ELSE 0 END)::int AS gps_fix_true_count
+      FROM scoped
+    `,
+    [truckCode, containerCode, tenantCode, from, to, managerUserId]
+  );
+
+  const timelineResult = await pool.query(
+    `
+      WITH scoped AS (
+        SELECT
+          th.occurred_at,
+          th.temperature_c,
+          th.humidity_pct,
+          th.pressure_hpa,
+          th.speed_kph,
+          th.gas_raw,
+          th.gas_alert,
+          th.shock,
+          th.gps_fix
+        FROM telemetry_history th
+        JOIN tenants t
+          ON t.id = th.tenant_id
+        JOIN trucks tr
+          ON tr.id = th.truck_id
+         AND tr.tenant_id = th.tenant_id
+        JOIN containers c
+          ON c.id = th.container_id
+         AND c.tenant_id = th.tenant_id
+        LEFT JOIN fleet_manager_assignments fma
+          ON fma.tenant_id = th.tenant_id
+         AND fma.container_id = th.container_id
+         AND fma.status = 'ACTIVE'
+         AND fma.unassigned_at IS NULL
+        WHERE tr.truck_code = $1
+          AND c.container_code = $2
+          AND ($3::text IS NULL OR t.tenant_code = $3)
+          AND th.occurred_at >= $4
+          AND th.occurred_at < $5
+          AND ($6::uuid IS NULL OR fma.manager_user_id = $6)
+      )
+      SELECT
+        date_bin($7::interval, occurred_at, TIMESTAMPTZ '1970-01-01') AS bucket_at,
+        COUNT(*)::int AS sample_count,
+        AVG(temperature_c) AS temperature_avg,
+        AVG(humidity_pct) AS humidity_avg,
+        AVG(pressure_hpa) AS pressure_avg,
+        AVG(speed_kph) AS speed_avg,
+        MAX(gas_raw) AS gas_raw_max,
+        BOOL_OR(gas_alert) AS gas_alert,
+        BOOL_OR(shock) AS shock,
+        BOOL_OR(COALESCE(gps_fix, FALSE)) AS gps_fix_any
+      FROM scoped
+      GROUP BY bucket_at
+      ORDER BY bucket_at ASC
+      LIMIT $8
+    `,
+    [truckCode, containerCode, tenantCode, from, to, managerUserId, bucketInterval, maxPoints]
+  );
+
+  const alertResult = await pool.query(
+    `
+      SELECT
+        a.severity,
+        COUNT(*)::int AS count
+      FROM alerts a
+      JOIN tenants t
+        ON t.id = a.tenant_id
+      JOIN trucks tr
+        ON tr.id = a.truck_id
+       AND tr.tenant_id = a.tenant_id
+      JOIN containers c
+        ON c.id = a.container_id
+       AND c.tenant_id = a.tenant_id
+      LEFT JOIN fleet_manager_assignments fma
+        ON fma.tenant_id = a.tenant_id
+       AND fma.container_id = a.container_id
+       AND fma.status = 'ACTIVE'
+       AND fma.unassigned_at IS NULL
+      WHERE tr.truck_code = $1
+        AND c.container_code = $2
+        AND ($3::text IS NULL OR t.tenant_code = $3)
+        AND a.last_event_at >= $4
+        AND a.last_event_at < $5
+        AND ($6::uuid IS NULL OR fma.manager_user_id = $6)
+      GROUP BY a.severity
+      ORDER BY a.severity ASC
+    `,
+    [truckCode, containerCode, tenantCode, from, to, managerUserId]
+  );
+
+  return {
+    metrics: metricsResult.rows[0] || null,
+    timeline: timelineResult.rows,
+    alertsBySeverity: alertResult.rows,
+  };
+}
+
 module.exports = {
   getFleetSummaryReport,
   getAlertSummaryReport,
   getDeviceHealthSummaryReport,
+  getContainerDayTelemetrySummary,
 };

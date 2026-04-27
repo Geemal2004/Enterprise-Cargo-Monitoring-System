@@ -210,6 +210,7 @@ const config = {
   },
   ai: {
     tripSummaryEnabled: readBool("AI_TRIP_SUMMARY_ENABLED", true),
+    dailySummaryEnabled: readBool("AI_DAILY_SUMMARY_ENABLED", true),
     geminiModel: readString("GEMINI_MODEL", "gemini-flash-lite-latest"),
     geminiApiBaseUrl: readString(
       "GEMINI_API_BASE_URL",
@@ -217,6 +218,10 @@ const config = {
     ),
     geminiApiKeyBase64: readString("GEMINI_API_KEY_BASE64", ""),
     tripSummaryTimeoutMs: readNumber("AI_TRIP_SUMMARY_TIMEOUT_MS", 15000),
+    dailySummaryTimeoutMs: readNumber("AI_DAILY_SUMMARY_TIMEOUT_MS", 15000),
+    dailySummaryMaxPoints: readNumber("AI_DAILY_SUMMARY_MAX_POINTS", 96),
+    dailySummaryBucketMinutes: readNumber("AI_DAILY_SUMMARY_BUCKET_MINUTES", 15),
+    dailySummarySystemPrompt: readString("AI_DAILY_SUMMARY_SYSTEM_PROMPT", ""),
   },
 };
 

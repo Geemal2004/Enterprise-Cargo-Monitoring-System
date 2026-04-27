@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Sparkles, Loader2 } from "lucide-react";
 import CargoHealthPanel from "../components/CargoHealthPanel";
 import DeviceHealthPanel from "../components/DeviceHealthPanel";
 import StatusCard from "../components/StatusCard";
@@ -23,6 +24,7 @@ import {
   TiltIcon,
   TemperatureIcon,
 } from "../components/MetricIcons";
+import { generateContainerDaySummary } from "../api/reportsApi";
 import { fetchTrips } from "../api/tripsApi";
 import { useFleetDataContext } from "../context/FleetDataContext";
 import { useDeviceHistory } from "../hooks/useDeviceHistory";
@@ -94,6 +96,10 @@ function valueOrDash(value, digits = 1, suffix = "") {
   return `${value.toFixed(digits)}${suffix}`;
 }
 
+function defaultSummaryDay() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function TruckDetailPage() {
   const { truckId, containerId } = useParams();
   const {
@@ -110,6 +116,11 @@ export default function TruckDetailPage() {
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeInfo, setRouteInfo] = useState(null);
   const [routeCoordinates, setRouteCoordinates] = useState([]);
+  const [summaryDay, setSummaryDay] = useState(defaultSummaryDay);
+  const [summaryCargoType, setSummaryCargoType] = useState("");
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState("");
+  const [dailySummary, setDailySummary] = useState(null);
 
   const routeEntry = truckId && containerId ? getEntryByIds(truckId, containerId) : null;
   const selectedEntry = routeEntry || entries[0] || null;
@@ -166,6 +177,13 @@ export default function TruckDetailPage() {
     };
   }, [selectedEntry?.truckId, selectedEntry?.containerId]);
 
+  useEffect(() => {
+    setDailySummary(null);
+    setSummaryError("");
+    setSummaryCargoType("");
+    setSummaryDay(defaultSummaryDay());
+  }, [selectedEntry?.truckId, selectedEntry?.containerId]);
+
   const metadata = useMemo(() => {
     if (!activeTrip) return {};
     if (activeTrip.metadata_json && typeof activeTrip.metadata_json === "object") {
@@ -176,6 +194,13 @@ export default function TruckDetailPage() {
     }
     return {};
   }, [activeTrip]);
+
+  useEffect(() => {
+    const cargoFromTrip = metadata?.cargo?.cargoType || metadata?.cargo?.cargoLabel || "";
+    if (cargoFromTrip && !summaryCargoType) {
+      setSummaryCargoType(cargoFromTrip);
+    }
+  }, [metadata, summaryCargoType]);
 
   const origin = useMemo(
     () => extractRoutePoint(metadata, "origin", activeTrip?.origin_name || "Origin"),
@@ -245,6 +270,39 @@ export default function TruckDetailPage() {
       isMounted = false;
     };
   }, [activeTrip, origin, destination]);
+
+  async function handleGenerateDaySummary(event) {
+    event.preventDefault();
+
+    if (!selectedEntry?.truckId || !selectedEntry?.containerId) {
+      setSummaryError("Truck and container must be selected.");
+      return;
+    }
+
+    const cargoType = summaryCargoType.trim();
+    if (!cargoType) {
+      setSummaryError("Cargo type is required.");
+      return;
+    }
+
+    setSummaryLoading(true);
+    setSummaryError("");
+
+    try {
+      const payload = await generateContainerDaySummary({
+        truckId: selectedEntry.truckId,
+        containerId: selectedEntry.containerId,
+        cargoType,
+        day: summaryDay,
+      });
+      setDailySummary(payload);
+    } catch (error) {
+      setDailySummary(null);
+      setSummaryError(extractErrorMessage(error));
+    } finally {
+      setSummaryLoading(false);
+    }
+  }
 
   if (!loading && !selectedEntry) {
     return (
@@ -443,6 +501,101 @@ export default function TruckDetailPage() {
             isOffline={deviceStatus.code === "offline"}
           />
           <CargoHealthPanel alerts={deviceAlerts} />
+
+          <section className="panel-surface">
+            <div className="panel-headline">
+              <h3>AI Daily Cargo Summary</h3>
+              <p>
+                Generate a one-day paragraph summary from sampled telemetry and selected cargo type.
+              </p>
+            </div>
+
+            <form className="admin-form top-gap" onSubmit={handleGenerateDaySummary}>
+              <div className="form-row">
+                <label className="form-label" htmlFor="summary-day">
+                  Day (UTC)
+                  <input
+                    id="summary-day"
+                    className="form-input"
+                    type="date"
+                    value={summaryDay}
+                    max={defaultSummaryDay()}
+                    onChange={(event) => setSummaryDay(event.target.value)}
+                    required
+                  />
+                </label>
+
+                <label className="form-label" htmlFor="summary-cargo-type">
+                  Cargo Type
+                  <input
+                    id="summary-cargo-type"
+                    className="form-input"
+                    type="text"
+                    value={summaryCargoType}
+                    placeholder="e.g. PERISHABLE_FOOD"
+                    onChange={(event) => setSummaryCargoType(event.target.value)}
+                    required
+                  />
+                </label>
+              </div>
+
+              <div className="inline-actions">
+                <button className="table-action" type="submit" disabled={summaryLoading}>
+                  {summaryLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin inline-block mr-2" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 inline-block mr-2" />
+                      Generate Summary
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {summaryError ? <div className="error-box top-gap">{summaryError}</div> : null}
+
+            {dailySummary?.aiSummary?.summary ? (
+              <div className="top-gap">
+                <div className="summary-grid">
+                  <div className="summary-card">
+                    <p className="summary-title">Provider</p>
+                    <p className="summary-value" style={{ fontSize: "1.3rem" }}>{dailySummary.aiSummary.provider || "-"}</p>
+                    <p className="summary-subtitle">Model: {dailySummary.aiSummary.model || "-"}</p>
+                  </div>
+
+                  <div className="summary-card">
+                    <p className="summary-title">Telemetry Used</p>
+                    <p className="summary-value" style={{ fontSize: "1.3rem" }}>{dailySummary.telemetry?.sampleCount || 0}</p>
+                    <p className="summary-subtitle">
+                      Day: {dailySummary.window?.day || summaryDay}, points: {dailySummary.telemetry?.timelinePointsAnalyzed || 0}
+                    </p>
+                  </div>
+
+                  <div className="summary-card summary-success">
+                    <p className="summary-title">Generated</p>
+                    <p className="summary-value" style={{ fontSize: "1.1rem" }}>{formatDateTime(dailySummary.aiSummary.generatedAt)}</p>
+                    <p className="summary-subtitle">Cargo: {dailySummary.cargoType || summaryCargoType}</p>
+                  </div>
+                </div>
+
+                <div className="ai-insight-box">
+                  <div className="ai-insight-icon">
+                    <Sparkles className="h-5 w-5" />
+                    AI Summary Insight
+                  </div>
+                  {dailySummary.aiSummary.summary}
+                </div>
+              </div>
+            ) : (
+              <p className="summary-subtitle top-gap">
+                Enter cargo type and day, then generate a one-paragraph AI summary for this unit.
+              </p>
+            )}
+          </section>
 
           <section className="panel-surface">
             <div className="panel-headline">

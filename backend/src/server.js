@@ -125,6 +125,7 @@ async function main() {
         pool,
         config,
         reportsRepository,
+        tripSummaryAiService,
       }),
       tripsService: createTripsService({
         pool,

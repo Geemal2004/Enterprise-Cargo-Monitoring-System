@@ -1,0 +1,1 @@
+const { Pool } = require('pg'); const pool = new Pool({ connectionString: process.env.DATABASE_URL }); pool.query(SELECT DATE_TRUNC('day', occurred_at) as day, COUNT(*) FROM telemetry_history GROUP BY 1 ORDER BY 2 DESC LIMIT 5;).then(r => console.log(r.rows)).catch(console.error).finally(()=>pool.end());

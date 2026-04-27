@@ -87,8 +87,55 @@ function parseEnumCsv(raw, allowedSet, label) {
   return values;
 }
 
+function parseDayWindow(rawDay) {
+  const dayValue = rawDay
+    ? String(rawDay).trim()
+    : new Date().toISOString().slice(0, 10);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayValue)) {
+    throw new AppError("day must be in YYYY-MM-DD format", 400);
+  }
+
+  const fromDate = new Date(`${dayValue}T00:00:00.000Z`);
+  if (Number.isNaN(fromDate.getTime())) {
+    throw new AppError("Invalid day value", 400);
+  }
+
+  const toDate = new Date(fromDate.getTime() + 24 * 60 * 60 * 1000);
+  return {
+    day: dayValue,
+    from: fromDate.toISOString(),
+    to: toDate.toISOString(),
+  };
+}
+
+function parseRequiredText(raw, label) {
+  const value = String(raw || "").trim();
+  if (!value) {
+    throw new AppError(`${label} is required`, 400);
+  }
+  return value;
+}
+
+function summarizeAlertRows(rows) {
+  const bySeverity = {};
+  let count = 0;
+
+  for (const row of rows || []) {
+    const severity = String(row.severity || "UNKNOWN").toUpperCase();
+    const amount = toNumber(row.count);
+    bySeverity[severity] = amount;
+    count += amount;
+  }
+
+  return {
+    count,
+    bySeverity,
+  };
+}
+
 function createReportsService(deps) {
-  const { reportsRepository, config } = deps;
+  const { reportsRepository, config, tripSummaryAiService } = deps;
 
   async function getFleetSummaryReport(query) {
     const window = parseWindow(query, { defaultHours: 24 });
@@ -267,10 +314,134 @@ function createReportsService(deps) {
     };
   }
 
+  async function getContainerDayAiSummary(input) {
+    if (!input || typeof input !== "object") {
+      throw new AppError("Request body must be a JSON object", 400);
+    }
+
+    const truckCode = parseRequiredText(input.truckId, "truckId");
+    const containerCode = parseRequiredText(input.containerId, "containerId");
+    const cargoType = parseRequiredText(input.cargoType, "cargoType");
+    const goodsDescription = input.goodsDescription
+      ? String(input.goodsDescription).trim()
+      : null;
+
+    const dayWindow = parseDayWindow(input.day);
+    const bucketMinutes = parsePositiveInteger(input.bucketMinutes, {
+      label: "bucketMinutes",
+      fallback: Number(config.ai.dailySummaryBucketMinutes || 15),
+      max: 1440,
+    });
+    const maxPoints = parsePositiveInteger(input.maxPoints, {
+      label: "maxPoints",
+      fallback: Number(config.ai.dailySummaryMaxPoints || 96),
+      max: 288,
+    });
+
+    const payload = await reportsRepository.getContainerDayTelemetrySummary(deps.pool, {
+      tenantCode: input.tenantCode || null,
+      truckCode,
+      containerCode,
+      from: dayWindow.from,
+      to: dayWindow.to,
+      bucketInterval: `${bucketMinutes} minutes`,
+      maxPoints,
+      managerUserId: input.managerUserId || null,
+    });
+
+    const metrics = payload.metrics || {};
+    const sampleCount = Number(metrics.sample_count || 0);
+    if (sampleCount <= 0) {
+      throw new AppError("No telemetry found for selected truck/container/day", 404);
+    }
+
+    const alertSummary = summarizeAlertRows(payload.alertsBySeverity);
+    const gpsFixRatePct = toNumber(
+      sampleCount > 0 ? ((Number(metrics.gps_fix_true_count || 0) / sampleCount) * 100).toFixed(2) : null,
+      null
+    );
+
+    let aiSummary = {
+      provider: "rule_based",
+      model: "fallback-local",
+      generatedAt: new Date().toISOString(),
+      summary: "AI summary is unavailable.",
+    };
+
+    if (tripSummaryAiService?.generateContainerDaySummary) {
+      aiSummary = await tripSummaryAiService.generateContainerDaySummary({
+        truckId: truckCode,
+        containerId: containerCode,
+        cargoType,
+        goodsDescription,
+        window: dayWindow,
+        metrics,
+        alertSummary,
+        timeline: payload.timeline,
+        maxTimelinePoints: maxPoints,
+      });
+    }
+
+    return {
+      truckId: truckCode,
+      containerId: containerCode,
+      cargoType,
+      window: {
+        day: dayWindow.day,
+        from: dayWindow.from,
+        to: dayWindow.to,
+        bucketMinutes,
+      },
+      telemetry: {
+        sampleCount,
+        timelinePointsAnalyzed: Array.isArray(payload.timeline) ? payload.timeline.length : 0,
+        occurredAtStart: metrics.first_point_at || null,
+        occurredAtEnd: metrics.last_point_at || null,
+        metrics: {
+          temperature: {
+            min: toNumber(metrics.temperature_min, null),
+            avg: toNumber(metrics.temperature_avg, null),
+            max: toNumber(metrics.temperature_max, null),
+          },
+          humidity: {
+            min: toNumber(metrics.humidity_min, null),
+            avg: toNumber(metrics.humidity_avg, null),
+            max: toNumber(metrics.humidity_max, null),
+          },
+          pressure: {
+            min: toNumber(metrics.pressure_min, null),
+            avg: toNumber(metrics.pressure_avg, null),
+            max: toNumber(metrics.pressure_max, null),
+          },
+          speed: {
+            min: toNumber(metrics.speed_min, null),
+            avg: toNumber(metrics.speed_avg, null),
+            max: toNumber(metrics.speed_max, null),
+          },
+          motion: {
+            shockCount: toNumber(metrics.shock_count),
+            tiltMax: toNumber(metrics.tilt_max, null),
+          },
+          gas: {
+            maxRaw: toNumber(metrics.gas_max, null),
+            avgRaw: toNumber(metrics.gas_avg, null),
+            gasAlertCount: toNumber(metrics.gas_alert_count),
+          },
+          gps: {
+            fixRatePct: gpsFixRatePct,
+          },
+        },
+        alerts: alertSummary,
+      },
+      aiSummary,
+    };
+  }
+
   return {
     getFleetSummaryReport,
     getAlertSummaryReport,
     getDeviceHealthSummaryReport,
+    getContainerDayAiSummary,
   };
 }
 

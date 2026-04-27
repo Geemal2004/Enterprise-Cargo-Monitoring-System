@@ -239,6 +239,65 @@ Example response:
 }
 ```
 
+### POST /api/reports/container-day-summary
+
+Body params:
+
+- `truckId` (required)
+- `containerId` (required)
+- `cargoType` (required)
+- `day` (`YYYY-MM-DD`, optional; defaults to current UTC day)
+- `bucketMinutes` (optional, default 15)
+- `maxPoints` (optional, default 96)
+
+Behavior:
+
+- Fetches exactly one day of telemetry history for the selected truck/container.
+- Aggregates telemetry into time buckets to keep AI input feasible.
+- Uses Gemini (base64 key via `GEMINI_API_KEY_BASE64`) with rule-based fallback.
+- Returns a single paragraph in `aiSummary.summary`.
+
+Example response:
+
+```json
+{
+  "truckId": "TRUCK01",
+  "containerId": "CONT01",
+  "cargoType": "PERISHABLE_FOOD",
+  "window": {
+    "day": "2026-04-19",
+    "from": "2026-04-19T00:00:00.000Z",
+    "to": "2026-04-20T00:00:00.000Z",
+    "bucketMinutes": 15
+  },
+  "telemetry": {
+    "sampleCount": 1242,
+    "timelinePointsAnalyzed": 96,
+    "occurredAtStart": "2026-04-19T00:00:04.000Z",
+    "occurredAtEnd": "2026-04-19T23:59:52.000Z",
+    "metrics": {
+      "temperature": { "min": 4.2, "avg": 6.1, "max": 8.4 },
+      "humidity": { "min": 52.0, "avg": 58.8, "max": 67.1 },
+      "pressure": { "min": 1001.5, "avg": 1005.1, "max": 1010.0 },
+      "speed": { "min": 0.0, "avg": 37.5, "max": 66.2 },
+      "motion": { "shockCount": 3, "tiltMax": 8.1 },
+      "gas": { "maxRaw": 1440, "avgRaw": 790.3, "gasAlertCount": 0 },
+      "gps": { "fixRatePct": 97.5 }
+    },
+    "alerts": {
+      "count": 1,
+      "bySeverity": { "WARNING": 1 }
+    }
+  },
+  "aiSummary": {
+    "provider": "gemini",
+    "model": "gemini-flash-lite-latest",
+    "generatedAt": "2026-04-20T00:01:13.512Z",
+    "summary": "The container carried perishable food under mostly stable thermal conditions..."
+  }
+}
+```
+
 ## SQL Query Explanations
 
 - Telemetry history uses `telemetry_history` + `(tenant_id, truck_id, container_id, occurred_at DESC)` index for bounded time windows and ordered scans.

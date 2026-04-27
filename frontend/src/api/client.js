@@ -6,12 +6,12 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 60000,
 });
 
 const refreshClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 60000,
 });
 
 let currentSession = readSessionFromStorage();
