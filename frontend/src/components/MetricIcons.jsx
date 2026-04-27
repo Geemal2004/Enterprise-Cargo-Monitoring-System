@@ -90,6 +90,26 @@ export function ShockIcon({ className }) {
   );
 }
 
+export function TiltIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 17h16" />
+      <path d="M6 14l10-8 2.5 3.2-10 8Z" />
+      <path d="M7.5 13.5l2 2.5" />
+      <path d="M14.5 8l2 2.5" />
+    </svg>
+  );
+}
+
 export function GpsIcon({ className }) {
   return (
     <svg

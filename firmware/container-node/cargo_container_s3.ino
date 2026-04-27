@@ -23,6 +23,8 @@ static const uint32_t SD_RETRY_INTERVAL_MS = 15000;
 
 // Shock threshold based on acceleration magnitude in g units.
 static const float SHOCK_THRESHOLD_G = 1.80f;
+static const uint32_t SHOCK_SAMPLE_INTERVAL_MS = 20;
+static const uint32_t SHOCK_LATCH_MS = 6000;
 static const float MQ2_EMA_ALPHA = 0.20f;
 static const float MQ2_SMOKE_BASELINE_RAW = 500.0f;
 static const float MQ2_SMOKE_PPM_PER_RAW = 0.35f;
@@ -103,12 +105,15 @@ volatile uint32_t syncedAtMs = 0;
 uint32_t sequenceNo = 1;
 unsigned long lastCycleMs = 0;
 unsigned long lastSdRetryMs = 0;
+unsigned long lastMotionSampleMs = 0;
+unsigned long lastShockMs = 0;
 
 float lastTempC = 0.0f;
 float lastHumidity = 0.0f;
 float lastPressureHpa = 0.0f;
 float lastTiltDeg = 0.0f;
 bool lastShock = false;
+bool shockLatched = false;
 float lastGasRawEma = 0.0f;
 float lastGasPpm = 0.0f;
 
@@ -151,6 +156,42 @@ bool computeShockFlag(float ax, float ay, float az) {
   const float accMag = sqrtf((ax * ax) + (ay * ay) + (az * az));
   const float accG = accMag / 9.80665f;
   return accG >= SHOCK_THRESHOLD_G;
+}
+
+void pollMotionSensor(unsigned long nowMs) {
+  if (!mpuReady) {
+    lastShock = false;
+    return;
+  }
+
+  if (nowMs - lastMotionSampleMs < SHOCK_SAMPLE_INTERVAL_MS) {
+    return;
+  }
+  lastMotionSampleMs = nowMs;
+
+  sensors_event_t accelEvt, gyroEvt, tempEvt;
+  mpu.getEvent(&accelEvt, &gyroEvt, &tempEvt);
+
+  lastTiltDeg = computeTiltDeg(
+    accelEvt.acceleration.x,
+    accelEvt.acceleration.y,
+    accelEvt.acceleration.z
+  );
+
+  if (computeShockFlag(
+        accelEvt.acceleration.x,
+        accelEvt.acceleration.y,
+        accelEvt.acceleration.z
+      )) {
+    shockLatched = true;
+    lastShockMs = nowMs;
+  }
+
+  if (shockLatched && (nowMs - lastShockMs > SHOCK_LATCH_MS)) {
+    shockLatched = false;
+  }
+
+  lastShock = shockLatched;
 }
 
 bool initSDCard() {
@@ -442,21 +483,7 @@ void readSensors(CargoPacket &pkt) {
     }
   }
 
-  // MPU6050
-  if (mpuReady) {
-    sensors_event_t accelEvt, gyroEvt, tempEvt;
-    mpu.getEvent(&accelEvt, &gyroEvt, &tempEvt);
-    lastTiltDeg = computeTiltDeg(
-      accelEvt.acceleration.x,
-      accelEvt.acceleration.y,
-      accelEvt.acceleration.z
-    );
-    lastShock = computeShockFlag(
-      accelEvt.acceleration.x,
-      accelEvt.acceleration.y,
-      accelEvt.acceleration.z
-    );
-  }
+  pollMotionSensor(millis());
 
   // MQ2 analog gas sensor
   const int raw = analogRead(PIN_MQ2_AO);
@@ -532,6 +559,7 @@ void setup() {
 
 void loop() {
   const unsigned long now = millis();
+  pollMotionSensor(now);
 
   if (now - lastCycleMs < TELEMETRY_INTERVAL_MS) {
     return;

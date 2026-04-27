@@ -20,6 +20,7 @@ import {
   HumidityIcon,
   PressureIcon,
   ShockIcon,
+  TiltIcon,
   TemperatureIcon,
 } from "../components/MetricIcons";
 import { fetchTrips } from "../api/tripsApi";
@@ -311,6 +312,13 @@ export default function TruckDetailPage() {
           subtitle="Air quality smoke estimate"
           icon={<GasIcon />}
           iconTone="icon-emerald"
+        />
+        <StatusCard
+          title="Tilt"
+          value={typeof motion.tiltDeg === "number" ? `${motion.tiltDeg.toFixed(1)} deg` : "-"}
+          subtitle="Container angle"
+          icon={<TiltIcon />}
+          iconTone="icon-indigo"
         />
         <StatusCard
           title="Shock"

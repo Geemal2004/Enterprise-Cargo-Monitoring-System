@@ -10,6 +10,7 @@ import {
   HumidityIcon,
   PressureIcon,
   ShockIcon,
+  TiltIcon,
   TemperatureIcon,
 } from "../components/MetricIcons";
 
@@ -104,6 +105,13 @@ export default function DashboardPage() {
               subtitle="gas.smokePpm"
               icon={<GasIcon />}
               iconTone="icon-emerald"
+            />
+            <StatusCard
+              title="Tilt"
+              value={typeof motion.tiltDeg === "number" ? `${motion.tiltDeg.toFixed(1)} deg` : "-"}
+              subtitle="motion.tiltDeg"
+              icon={<TiltIcon />}
+              iconTone="icon-indigo"
             />
             <StatusCard
               title="Shock"
