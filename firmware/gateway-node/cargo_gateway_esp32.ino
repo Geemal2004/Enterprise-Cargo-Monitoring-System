@@ -100,7 +100,7 @@ static const uint32_t WIFI_SCAN_TIMEOUT_MS = 30000;
 static const uint16_t WIFI_SCAN_MAX_MS_PER_CHANNEL = 120;
 static const uint32_t OTA_READ_TIMEOUT_MS = 15000;
 static const uint32_t OTA_SUCCESS_MQTT_FLUSH_MS = 4000;
-static const float SMOKE_ALERT_THRESHOLD_PPM = 300.0f;
+static const float SMOKE_ALERT_THRESHOLD_PPM = 500.0f;
 static const uint8_t ESP_NOW_BOOT_CHANNEL = 1;
 
 // -----------------------------------------------------------------------------

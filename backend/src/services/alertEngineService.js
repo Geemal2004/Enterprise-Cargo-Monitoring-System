@@ -13,7 +13,7 @@ function createAlertEngineService(deps) {
       },
       GAS_SPIKE: {
         severity: "WARNING",
-        thresholdNumeric: config.alerts.gasSpikeThresholdPpm,
+        thresholdNumeric: config.alerts.gasSpikeThresholdRaw,
       },
       SHOCK_DETECTED: {
         severity: "CRITICAL",
@@ -163,7 +163,12 @@ function createAlertEngineService(deps) {
     const gasRule = resolveThresholdRule(rules, "GAS_SPIKE");
     const shockRule = resolveThresholdRule(rules, "SHOCK_DETECTED");
     const gpsRule = resolveThresholdRule(rules, "GPS_LOST");
+    const gasRaw = Number.isFinite(telemetry.gasRaw) ? telemetry.gasRaw : null;
     const smokePpm = Number.isFinite(telemetry.smokePpm) ? telemetry.smokePpm : null;
+    const gasRawThreshold = Number(gasRule.thresholdNumeric);
+    const smokeThreshold = Number(config.alerts.smokeThresholdPpm);
+    const gasSpikeOpen = gasRaw !== null && gasRaw > gasRawThreshold;
+    const smokeSpikeOpen = smokePpm !== null && smokePpm > smokeThreshold;
 
     const evaluations = [
       {
@@ -184,17 +189,18 @@ function createAlertEngineService(deps) {
       },
       {
         alertType: "GAS_SPIKE",
-        title: "Smoke level detected",
-        shouldBeOpen:
-          smokePpm !== null && smokePpm > Number(gasRule.thresholdNumeric),
+        title: gasSpikeOpen ? "Gas sensor spike detected" : "Smoke level detected",
+        shouldBeOpen: gasSpikeOpen || smokeSpikeOpen,
         severity: gasRule.severity,
-        latestValueNumeric: smokePpm,
+        latestValueNumeric: gasSpikeOpen ? gasRaw : smokePpm,
         latestValueBoolean: null,
-        thresholdValueNumeric: gasRule.thresholdNumeric,
+        thresholdValueNumeric: gasSpikeOpen ? gasRawThreshold : smokeThreshold,
         message:
-          smokePpm !== null
-            ? `Smoke level ${smokePpm} ppm exceeds threshold ${gasRule.thresholdNumeric} ppm`
-            : "Smoke threshold exceeded",
+          gasSpikeOpen
+            ? `Gas sensor value ${gasRaw} exceeds threshold ${gasRawThreshold}`
+            : smokeSpikeOpen
+              ? `Smoke level ${smokePpm} ppm exceeds threshold ${smokeThreshold} ppm`
+              : "Gas and smoke conditions cleared",
         alertRuleId: gasRule.ruleId,
       },
       {
