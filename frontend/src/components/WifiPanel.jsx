@@ -139,6 +139,7 @@ export default function WifiPanel({
   useEffect(() => {
     if (sortedNetworks.length > 0) {
       setScanLoading(false);
+      setError("");
     }
   }, [sortedNetworks.length]);
 
@@ -168,10 +169,16 @@ export default function WifiPanel({
         commandTopic: response.data?.commandTopic,
       });
       setMqttState(response.data?.mqtt || null);
+      
       setTimeout(() => {
-        setScanLoading(false);
-        setError((current) => current || `No scan result received yet. Check EMQX topic: ${response.data?.commandTopic || "unknown"}`);
-      }, 10000);
+        setScanLoading((isLoading) => {
+          if (isLoading) {
+            setError(`No scan result received yet. Check EMQX topic: ${response.data?.commandTopic || "unknown"}`);
+            return false;
+          }
+          return isLoading;
+        });
+      }, 35000);
     } catch (scanError) {
       setScanLoading(false);
       setError(scanError?.response?.data?.error || scanError.message || "Failed to request WiFi scan.");
@@ -208,10 +215,16 @@ export default function WifiPanel({
         commandTopic: response.data?.commandTopic,
       });
       setMqttState(response.data?.mqtt || null);
+      
       setTimeout(() => {
-        setConnectLoading(false);
-        setError((current) => current || `No WiFi status received yet. Check EMQX topic: ${response.data?.commandTopic || "unknown"}`);
-      }, 30000);
+        setConnectLoading((isLoading) => {
+          if (isLoading) {
+            setError(`No WiFi status received yet. Check EMQX topic: ${response.data?.commandTopic || "unknown"}`);
+            return false;
+          }
+          return isLoading;
+        });
+      }, 35000);
     } catch (connectError) {
       setConnectLoading(false);
       setError(connectError?.response?.data?.error || connectError.message || "Failed to send WiFi credentials.");

@@ -774,6 +774,9 @@ void startWifiScan() {
   }
 
   Serial.println("[WIFI] Scan requested");
+  // Stop any background connection loops so the radio is freed up for scanning
+  WiFi.disconnect();
+  delay(100);
   esp_wifi_scan_stop();
   WiFi.scanDelete();
   const int result = WiFi.scanNetworks(true, true, false, WIFI_SCAN_MAX_MS_PER_CHANNEL);
@@ -798,6 +801,8 @@ void startWifiScan() {
 bool runBoundedWifiScanFallback(const char *reason) {
   Serial.printf("[WIFI] Running bounded fallback scan: %s\n", reason ? reason : "unknown");
 
+  WiFi.disconnect();
+  delay(100);
   esp_wifi_scan_stop();
   WiFi.scanDelete();
   delay(20);
@@ -816,9 +821,11 @@ bool runBoundedWifiScanFallback(const char *reason) {
 }
 
 void publishWifiScanResult(int networkCount) {
-  StaticJsonDocument<1536> doc;
+  StaticJsonDocument<512> doc;
   JsonArray networks = doc.to<JsonArray>();
-  const int limitedCount = min(networkCount, 12);
+  // Send fewer networks down the cellular link to avoid packet drops on 2G
+  // ESP32 automatically sorts these by RSSI (strongest first)
+  const int limitedCount = min(networkCount, 4);
   scannedNetworkCacheCount = 0;
 
   for (int i = 0; i < limitedCount; ++i) {
@@ -840,7 +847,7 @@ void publishWifiScanResult(int networkCount) {
     }
   }
 
-  char payload[1536] = {};
+  char payload[512] = {};
   const size_t len = serializeJson(doc, payload, sizeof(payload));
   if (mqtt_client.connected()) {
     const String topic = wifiTopicBase + "/scan/result";

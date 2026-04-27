@@ -35,11 +35,15 @@ function createWifiRoutes() {
     asyncHandler(async (req, res) => {
       const topicBase = resolveGatewayWifiTopicBase(req);
       const commandTopic = `${topicBase}/scan/request`;
-      await otaService.publishMqttMessage(commandTopic, {}, {
-        qos: 1,
-        retain: false,
-        timeoutMs: 5000,
-      });
+      await otaService.publishMqttMessage(
+        commandTopic,
+        { command: "scan", timestamp: Date.now() },
+        {
+          qos: 1,
+          retain: false,
+          timeoutMs: 15000,
+        }
+      );
 
       res.status(200).json({
         ok: true,
