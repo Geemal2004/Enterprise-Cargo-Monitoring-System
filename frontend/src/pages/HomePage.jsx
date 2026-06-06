@@ -66,6 +66,7 @@ function SiteNav() {
             <span className="grid h-10 w-10 place-items-center rounded-full bg-gradient-accent text-accent-foreground transition-transform group-hover:rotate-45">
               <ArrowUpRight className="h-4 w-4" />
             </span>
+            <span className="sr-only">0711625588</span>
           </a>
         </div>
       </nav>
@@ -374,10 +375,6 @@ function CustomerOptions() {
               Start with the option that fits your team
             </h2>
           </div>
-          <p className="max-w-sm text-muted-foreground">
-            This homepage is marketing-first. Customer access is handled through login and account
-            request flows.
-          </p>
         </div>
 
         <div id="signup" className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -403,7 +400,7 @@ function CustomerOptions() {
               Request a new customer account for your operations team and onboarding support.
             </p>
             <a
-              href="mailto:sales@cargomonitor.com?subject=Customer%20Sign%20Up%20Request"
+              href="mailto:geemalmuthugala@gmail.com?subject=Customer%20Sign%20Up%20Request"
               className="mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-accent px-5 py-3 text-sm font-semibold text-accent-foreground transition-transform hover:scale-[1.02]"
             >
               Request sign up
@@ -449,9 +446,12 @@ function CtaFooter() {
                 Deploy our IoT nodes and start tracking your fleet's cargo in real time. 
                 Contact us to plan your deployment — free consultation.
               </p>
+              <p className="mt-3 text-display text-4xl text-ink sm:text-5xl lg:text-6xl" style={{ fontSize: '1.5rem' }}>
+                Call us: 0711625588   
+              </p>            
             </div>
             <a
-              href="mailto:hello@cargomonitor.com"
+              href="mailto:geemalmuthugala@gmail.com"
               className="group inline-flex items-center gap-3 rounded-full bg-ink py-4 pl-8 pr-3 font-display text-base font-semibold text-ink-foreground shadow-soft transition-transform hover:scale-[1.02]"
             >
               Request a Demo
