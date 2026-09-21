@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { FieldLabel, Input, FieldHint } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { useAuthContext } from "../context/AuthContext";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 
 function extractErrorMessage(error) {
   return (
@@ -54,55 +59,93 @@ export default function LoginPage() {
     }
   }
 
+  if (initializing) {
+    return (
+      <div className="auth-loading-shell">
+        <Card className="auth-loading-panel w-full max-w-md">
+          <CardContent className="flex items-center gap-3 p-6">
+            <Spinner label="Checking session" />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Authentication
+              </p>
+              <h2 className="text-lg font-semibold">Checking session</h2>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="auth-shell">
-      <section className="auth-panel panel-surface">
-        <p className="eyebrow">Enterprise Access</p>
-        <h1 className="auth-title">Smart Cargo Monitoring</h1>
-        <p className="auth-subtitle">
-          Sign in with your tenant account to access fleet telemetry, alerts, and admin controls.
-        </p>
+      <Card className="auth-panel w-full max-w-lg shadow-md">
+        <CardContent className="p-6 sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Enterprise Access
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">
+            Smart Cargo Monitoring
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sign in with your tenant account to access fleet telemetry, alerts, and admin controls.
+          </p>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label className="form-label" htmlFor="login-email">
-            Email
-          </label>
-          <input
-            id="login-email"
-            type="email"
-            autoComplete="username"
-            className="form-input"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            disabled={submitting}
-            required
-          />
+          <form className="mt-6 grid gap-4" onSubmit={handleSubmit} noValidate>
+            <div className="grid gap-1.5">
+              <FieldLabel htmlFor="login-email" required>
+                Email
+              </FieldLabel>
+              <Input
+                id="login-email"
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                disabled={submitting}
+                error={Boolean(error)}
+                required
+              />
+            </div>
 
-          <label className="form-label" htmlFor="login-password">
-            Password
-          </label>
-          <input
-            id="login-password"
-            type="password"
-            autoComplete="current-password"
-            className="form-input"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            disabled={submitting}
-            required
-          />
+            <div className="grid gap-1.5">
+              <FieldLabel htmlFor="login-password" required>
+                Password
+              </FieldLabel>
+              <Input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                disabled={submitting}
+                error={Boolean(error)}
+                required
+              />
+            </div>
 
-          {error ? <div className="error-box">{error}</div> : null}
+            {error ? (
+              <Alert tone="error" title="Sign-in failed">
+                {error}
+              </Alert>
+            ) : (
+              <FieldHint>Use your organization credentials. Sessions expire automatically.</FieldHint>
+            )}
 
-          <button type="submit" className="auth-submit" disabled={submitting}>
-            {submitting ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
+            <Button type="submit" loading={submitting} disabled={submitting} className="mt-1 w-full">
+              {submitting ? "Signing in..." : "Sign in"}
+            </Button>
+          </form>
 
-        <p className="auth-footnote">
-          Need operations dashboard access? Return to <Link to="/fleet">Fleet Overview</Link> after login.
-        </p>
-      </section>
+          <p className="mt-5 text-sm text-muted-foreground">
+            Need operations dashboard access? Return to{" "}
+            <Link to="/fleet" className="font-semibold text-signal hover:underline">
+              Fleet Overview
+            </Link>{" "}
+            after login.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

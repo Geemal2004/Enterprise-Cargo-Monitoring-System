@@ -1,51 +1,52 @@
 # Smart Cargo Monitoring Frontend
 
-React + Vite dashboard for Smart Cargo Monitoring.
+React + Vite console for **CargoMonitor / Smart Cargo** — fleet telemetry, alerts, trips, OTA, and admin.
 
 ## Stack
 
-- React
-- Vite
-- axios
-- react-leaflet
-- leaflet
-- recharts
+- React 18 + Vite 5 + React Router 6
+- Tailwind CSS 3 + design tokens (`src/styles/tokens.css`)
+- Framer Motion (entrance / signature moments)
+- MapLibre (`components/ui/map.jsx`)
+- Recharts
+- Lucide icons + Geist fonts
+- Axios
 
-## Features
+## Design docs
 
-- Dashboard page with live status cards
-- Polls backend every 5 seconds:
-  - GET /api/latest
-  - GET /api/alerts
-- Shows:
-  - current temperature, humidity, pressure, gas
-  - shock status
-  - online/offline badge
-  - alert panel
-  - map marker from GPS lat/lon
-- Supports one truck/container cleanly with selector-ready structure for multiple devices later
-- Chart is shown only when backend history is available; otherwise cards-only view
+- `/docs/design-audit.md` — Phase 1 inventory
+- `/docs/design-system.md` — Control Tower system
+- `/docs/phase-4-changelog.md` — page upgrades
+- `/docs/phase-5-signature-moments.md` — signature motion
+- `/docs/upgrade-summary.md` — full upgrade summary & test plan
 
 ## Environment
 
-Create .env file from .env.example:
+Create `.env` from `.env.example`:
 
-- VITE_API_URL=https://vish85521-cargo.hf.space/api
+- `VITE_API_URL=https://vish85521-cargo.hf.space/api`
 
 ## Run
 
-1. Install dependencies
+```bash
+npm install
+npm run dev      # http://localhost:3000
+npm run build
+npm run preview
+```
 
-   npm install
+## Routes (high level)
 
-2. Start development server
-
-   npm run dev
-
-3. Build production bundle
-
-   npm run build
-
-4. Preview production build
-
-   npm run preview
+| Path | Purpose |
+|------|---------|
+| `/` | Marketing landing |
+| `/login` | Auth |
+| `/fleet` | Fleet overview (default after login) |
+| `/analytics` | Fleet GPS map |
+| `/alerts` | Alerts center |
+| `/detail/:truckId/:containerId` | Asset detail |
+| `/trips`, `/trips/:tripCode` | Trip ops (role-gated) |
+| `/ota` | Wi-Fi + firmware (admin) |
+| `/admin/users` | User management |
+| `/admin/fleet-manager-assignments` | Super-admin assignments |
+| `/dashboard` | Redirects to `/fleet` |

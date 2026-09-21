@@ -214,8 +214,8 @@ export default function TripDetailPage() {
           </p>
         </div>
         <div className="status-banner-right">
-          <span className="pill pill-neutral">{trip.status}</span>
-          <Link className="table-action" to="/trips">
+          <span className="pill pill-info">{trip.status}</span>
+          <Link className="table-action no-underline" to="/trips">
             Back to Trips
           </Link>
         </div>

@@ -167,7 +167,10 @@ export default function FleetManagerAssignmentsPage() {
     <div className="page-grid">
       <section>
         <div className="panel-headline spaced-bottom">
-          <h2>Fleet Manager Assignments</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Administration
+          </p>
+          <h2 className="mt-1">Fleet Manager Assignments</h2>
           <p>Assign active truck + container pairs to fleet managers.</p>
         </div>
 

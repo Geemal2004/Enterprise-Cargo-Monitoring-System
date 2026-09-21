@@ -1,44 +1,13 @@
+@import "./styles/tokens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@font-face {
-  font-family: "Orbitron";
-  src: url("https://db.onlinewebfonts.com/t/19b2f334900bf462d165704c8792fa1c.eot");
-  src: url("https://db.onlinewebfonts.com/t/19b2f334900bf462d165704c8792fa1c.eot?#iefix") format("embedded-opentype"),
-    url("https://db.onlinewebfonts.com/t/19b2f334900bf462d165704c8792fa1c.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/19b2f334900bf462d165704c8792fa1c.woff") format("woff"),
-    url("https://db.onlinewebfonts.com/t/19b2f334900bf462d165704c8792fa1c.ttf") format("truetype"),
-    url("https://db.onlinewebfonts.com/t/19b2f334900bf462d165704c8792fa1c.svg#Orbitron") format("svg");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
 :root {
-  font-family: "Geist Sans", "Manrope", "Segoe UI", "Helvetica Neue", sans-serif;
-  color: #102236;
-  background: #eef2f6;
-  --background: 210 40% 98%;
-  --foreground: 215 40% 16%;
-  --card: 0 0% 100%;
-  --card-foreground: 215 40% 16%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 215 40% 16%;
-  --primary: 210 76% 46%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96%;
-  --secondary-foreground: 215 40% 16%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  --accent: 210 40% 96%;
-  --accent-foreground: 215 40% 16%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 215 20% 65%;
-  --radius: 10px;
+  font-family: var(--font-sans);
+  color: var(--cm-text);
+  background: var(--cm-canvas);
 }
 
 p{
@@ -61,11 +30,108 @@ h1{
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top left, #f7fafc 0%, #eef2f6 50%, #e6ebf2 100%);
+  background:
+    radial-gradient(circle at top left, #f7fafc 0%, var(--cm-canvas) 52%, var(--cm-canvas-deep) 100%);
+  font-family: var(--font-sans);
+  color: var(--cm-text);
 }
 
-#root {
-  min-height: 100vh;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.focus\:not-sr-only:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* Global focus ring for keyboard users (Phase 3 primitives will refine per-control) */
+:focus-visible {
+  outline: 2px solid var(--cm-focus-ring);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Signature motion utilities (used by landing; safe no-ops under reduced motion) */
+@keyframes cm-float {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) translateY(0);
+  }
+  50% {
+    transform: translate(-50%, -50%) translateY(-10px);
+  }
+}
+
+@keyframes cm-pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.animate-float {
+  animation: cm-float var(--duration-deliberate) var(--ease-standard) infinite;
+}
+
+.animate-pulse-ring {
+  animation: cm-pulse-ring 2s var(--ease-standard) infinite;
+}
+
+@keyframes cm-signal-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.25);
+    opacity: 0;
+  }
+}
+
+.cm-signal-ping {
+  animation: cm-signal-ping 1.8s var(--ease-standard) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float,
+  .animate-pulse-ring,
+  .cm-signal-ping,
+  .animate-in,
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 .portal-shell {
@@ -84,15 +150,13 @@ body {
   position: sticky;
   top: 14px;
   align-self: start;
-  display: flex;
   flex-direction: column;
   gap: 18px;
   padding: 16px;
-  border-radius: 18px;
-  
-    background: #0e1822;
-  color: #e2e8f0;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.24);
+  border-radius: var(--radius-xl);
+  background: var(--cm-sidebar);
+  color: var(--cm-text-inverse);
+  box-shadow: var(--shadow-sidebar);
   min-height: calc(100vh - 40px);
 }
 
@@ -269,11 +333,11 @@ body {
 }
 
 .panel-surface {
-  border: 1px solid #d9e3ee;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-  padding: 16px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--cm-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--cm-surface) 0%, var(--cm-surface-muted) 100%);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-md);
 }
 
 .panel-headline h2,
@@ -650,11 +714,6 @@ body {
   background: #f8fbff;
 }
 
-.leaflet-container {
-  width: 100%;
-  height: 100%;
-}
-
 .chart-wrap-lg {
   margin-top: 10px;
   height: 320px;
@@ -949,13 +1008,20 @@ body {
 
 .auth-submit {
   margin-top: 4px;
-  border: 1px solid #0f4c81;
-  border-radius: 10px;
+  border: 1px solid var(--cm-signal);
+  border-radius: var(--radius-md);
   padding: 9px 12px;
-  background: #0f4c81;
-  color: #f8fcff;
+  background: var(--cm-signal);
+  color: var(--cm-signal-foreground);
   font-weight: 700;
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.auth-submit:hover:not(:disabled) {
+  background: var(--cm-signal-hover);
+  border-color: var(--cm-signal-hover);
 }
 
 .auth-submit:disabled {
@@ -1113,43 +1179,27 @@ body {
   }
 }
 
-/* Landing page styles scoped to the homepage. */
+/* Landing page styles scoped to the homepage — colors come from tokens.css */
 .landing {
-  --landing-background: #f8fafc;
-  --landing-foreground: #101827;
-  --landing-surface: #f1f5f9;
-  --landing-surface-elevated: #ffffff;
-  --landing-card: #ffffff;
-  --landing-card-foreground: #111827;
-  --landing-accent: #7dd3fc;
-  --landing-accent-foreground: #0b1220;
-  --landing-muted: #e2e8f0;
-  --landing-muted-foreground: #64748b;
-  --landing-ink: #0f172a;
-  --landing-ink-foreground: #f8fafc;
-  --landing-border: #e2e8f0;
-  --landing-gradient-hero: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-  --landing-gradient-accent: linear-gradient(135deg, #7dd3fc, #38bdf8);
-  --landing-gradient-ink: linear-gradient(160deg, #1e293b, #0f172a);
-  --landing-shadow-soft: 0 10px 40px -12px rgba(15, 23, 42, 0.18);
-  --landing-shadow-glow: 0 20px 60px -20px rgba(56, 189, 248, 0.45);
-  --landing-shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 10px 30px -15px rgba(15, 23, 42, 0.2);
-  font-family: "Inter", "Geist Sans", "Manrope", sans-serif;
+  font-family: var(--font-sans);
 }
 
 .landing .font-display {
-  font-family: "Space Grotesk", "Inter", sans-serif;
+  font-family: var(--font-display);
 }
 
 .landing .text-display {
-  font-family: "Space Grotesk", "Inter", sans-serif;
+  font-family: var(--font-display);
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: var(--tracking-display);
   line-height: 0.92;
 }
 
+/* Legacy class name retained; mapped to mono for telemetry/industrial feel (no CDN Orbitron) */
 .landing .text-orbitron {
-  font-family: "Orbitron", "Space Grotesk", "Inter", sans-serif;
+  font-family: var(--font-mono);
+  letter-spacing: -0.03em;
+  font-weight: 600;
 }
 
 .landing a {

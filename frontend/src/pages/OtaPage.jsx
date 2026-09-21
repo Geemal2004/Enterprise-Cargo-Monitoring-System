@@ -66,11 +66,31 @@ export default function OtaPage() {
   }, []);
 
   return (
-    <main className="page-grid">
+    <main className="page-grid gap-4">
       <section>
-        <div className="panel-headline spaced-bottom">
-          <h2>OTA Updates</h2>
-          <p>Upload firmware binaries and trigger updates for gateway and container devices.</p>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Device ops
+            </p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight md:text-3xl">OTA Updates</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Configure gateway Wi‑Fi, then upload firmware and trigger updates for gateway and container devices.
+            </p>
+          </div>
+          <span
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              sseConnected
+                ? "border-[color:var(--cm-success-border)] bg-[color:var(--cm-success-bg)] text-[color:var(--cm-success)]"
+                : "border-border bg-muted text-muted-foreground"
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${sseConnected ? "bg-[color:var(--cm-success)]" : "bg-muted-foreground"}`}
+              aria-hidden="true"
+            />
+            {sseConnected ? "Live events connected" : "Events disconnected"}
+          </span>
         </div>
 
         <div className="grid gap-4">

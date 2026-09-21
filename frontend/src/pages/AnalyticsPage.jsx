@@ -1,7 +1,11 @@
-import { useMemo } from "react";
-import { Map, MapControls, MapMarker, MarkerContent, MarkerLabel } from "@/components/ui/map";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
+import { SignalMarker } from "@/components/ui/signal-marker";
 import { useFleetDataContext } from "../context/FleetDataContext";
 import { extractTelemetry, getDeviceLabel } from "../types/telemetry";
+import { useMemo } from "react";
+import { Map, MapControls, MapMarker, MarkerContent, MarkerLabel } from "@/components/ui/map";
 
 const DEFAULT_CENTER = [80.7718, 7.8731];
 
@@ -45,13 +49,21 @@ export default function AnalyticsPage() {
 
   return (
     <div className="analytics-map-page">
-      <section className="analytics-map-shell">
+      <section className="analytics-map-shell shadow-lg">
         <div className="analytics-map-overlay">
-          <h2>Analytics Map</h2>
-          <p>All active containers with GPS fixes on a single view.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Spatial view
+          </p>
+          <h2 className="mt-1 text-xl font-bold tracking-tight text-foreground">Analytics map</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Active containers with GPS fixes on a single control-tower view.
+          </p>
+          {error ? (
+            <Alert tone="error" className="mt-3" title="Map data error">
+              {error}
+            </Alert>
+          ) : null}
         </div>
-
-        {error ? <div className="error-box">{error}</div> : null}
 
         <div className="analytics-map-wrap">
           <Map center={mapCenter} zoom={6.2} scrollZoom={true} touchZoomRotate={true}>
@@ -59,7 +71,7 @@ export default function AnalyticsPage() {
             {gpsMarkers.map((marker) => (
               <MapMarker key={marker.key} longitude={marker.lon} latitude={marker.lat}>
                 <MarkerContent>
-                  <div className="size-4 rounded-full bg-blue-600 border-2 border-white shadow-lg" />
+                  <SignalMarker size="md" />
                   <MarkerLabel position="top">{marker.label}</MarkerLabel>
                 </MarkerContent>
               </MapMarker>
@@ -67,14 +79,16 @@ export default function AnalyticsPage() {
           </Map>
 
           {loading ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/50">
-              <span className="muted-text">Loading telemetry...</span>
+            <div className="absolute inset-0 flex items-center justify-center gap-2 bg-background/50 backdrop-blur-[1px]">
+              <Spinner label="Loading map telemetry" />
+              <span className="text-sm text-muted-foreground">Loading telemetry…</span>
             </div>
           ) : null}
         </div>
 
         <p className="analytics-map-count">
-          Showing {gpsMarkers.length} active container locations.
+          <Badge tone="signal">{gpsMarkers.length} locations</Badge>
+          <span className="ml-2">active container GPS fixes</span>
         </p>
       </section>
     </div>

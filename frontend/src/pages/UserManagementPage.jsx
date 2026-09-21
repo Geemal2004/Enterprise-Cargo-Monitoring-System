@@ -378,7 +378,10 @@ export default function UserManagementPage() {
     <div className="page-grid">
       <section>
         <div className="panel-headline spaced-bottom">
-          <h2>User Management</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Administration
+          </p>
+          <h2 className="mt-1">User Management</h2>
           <p>Tenant-scoped identity operations with role assignment and password governance.</p>
         </div>
 

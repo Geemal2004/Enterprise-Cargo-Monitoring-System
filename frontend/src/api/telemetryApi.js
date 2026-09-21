@@ -1,15 +1,25 @@
 import apiClient from "./client";
 
+function noCacheConfig() {
+  return {
+    params: { _: Date.now() },
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+    },
+  };
+}
+
 export function fetchLatestTelemetry() {
-  return apiClient.get("/latest");
+  return apiClient.get("/latest", noCacheConfig());
 }
 
 export function fetchActiveAlerts() {
-  return apiClient.get("/alerts");
+  return apiClient.get("/alerts", noCacheConfig());
 }
 
 export function fetchBackendHealth() {
-  return apiClient.get("/health");
+  return apiClient.get("/health", noCacheConfig());
 }
 
 function isNotFoundError(error) {
@@ -18,7 +28,7 @@ function isNotFoundError(error) {
 
 export async function fetchFleetSummaryOptional() {
   try {
-    const response = await apiClient.get("/fleet/summary");
+    const response = await apiClient.get("/fleet/summary", noCacheConfig());
     return response.data;
   } catch (error) {
     if (isNotFoundError(error)) {

@@ -1,6 +1,18 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Label, Select } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { formatDateTime } from "../types/telemetry";
-import StatusPill from "./StatusPill";
 
 const SEVERITY_OPTIONS = [
   { value: "all", label: "All" },
@@ -36,79 +48,93 @@ export default function AlertsTable({ alerts }) {
   }, [alerts, severityFilter, statusFilter]);
 
   return (
-    <section className="panel-surface">
-      <div className="panel-headline">
-        <h3>Alerts Log</h3>
-        <p>Filter incidents by severity and lifecycle state</p>
-      </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Alerts Log</CardTitle>
+        <CardDescription>Filter incidents by severity and lifecycle state</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4 flex flex-wrap gap-3">
+          <Label className="min-w-[152px]">
+            Severity Level
+            <Select
+              value={severityFilter}
+              onChange={(event) => setSeverityFilter(event.target.value)}
+            >
+              {SEVERITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </Label>
 
-      <div className="filter-row">
-        <label className="filter-label">
-          Severity Level
-          <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>
-            {SEVERITY_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Label className="min-w-[152px]">
+            Alert State
+            <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </Label>
+        </div>
 
-        <label className="filter-label">
-          Alert State
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            {STATUS_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {filtered.length === 0 ? (
-        <p className="empty-state">
-          {(alerts || []).length === 0
-            ? "No alerts yet. This view will populate automatically when thresholds are triggered."
-            : "No alerts match the selected filters. Try broadening the filter criteria."}
-        </p>
-      ) : (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Last Seen</th>
-                <th>Truck / Container</th>
-                <th>Severity</th>
-                <th>Message</th>
-                <th>State</th>
-              </tr>
-            </thead>
-            <tbody>
+        {filtered.length === 0 ? (
+          <EmptyState
+            title={(alerts || []).length === 0 ? "No alerts yet" : "No matching alerts"}
+            description={
+              (alerts || []).length === 0
+                ? "This view will populate automatically when thresholds are triggered."
+                : "Try broadening the filter criteria."
+            }
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Last Seen</TableHead>
+                <TableHead>Truck / Container</TableHead>
+                <TableHead>Severity</TableHead>
+                <TableHead>Message</TableHead>
+                <TableHead>State</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filtered.map((item) => (
-                <tr key={item.id}>
-                  <td>{formatDateTime(item.lastSeenAt)}</td>
-                  <td>{item.truckId} / {item.containerId}</td>
-                  <td>
-                    <StatusPill tone={item.severityLevel}>{item.severity}</StatusPill>
-                  </td>
-                  <td>{item.message}</td>
-                  <td>
-                    <div className="state-cell">
-                      <StatusPill tone={alertStateTone(item.active)}>
+                <TableRow key={item.id}>
+                  <TableCell>{formatDateTime(item.lastSeenAt)}</TableCell>
+                  <TableCell>
+                    <Link
+                      className="font-semibold text-signal no-underline hover:underline"
+                      to={`/detail/${item.truckId}/${item.containerId}`}
+                    >
+                      {item.truckId} / {item.containerId}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <Badge tone={item.severityLevel}>{item.severity}</Badge>
+                  </TableCell>
+                  <TableCell>{item.message}</TableCell>
+                  <TableCell>
+                    <div className="grid gap-1">
+                      <Badge tone={alertStateTone(item.active)}>
                         {item.active ? "Active" : "Resolved"}
-                      </StatusPill>
+                      </Badge>
                       {!item.active && item.resolvedAt ? (
-                        <span className="state-note">{formatDateTime(item.resolvedAt)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDateTime(item.resolvedAt)}
+                        </span>
                       ) : null}
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }

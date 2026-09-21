@@ -1,9 +1,14 @@
-export default function SummaryCard({ title, value, subtitle, tone = "default" }) {
+import { MetricCard } from "@/components/ui/card";
+
+export default function SummaryCard({ title, value, subtitle, tone = "default", icon, className }) {
   return (
-    <article className={`summary-card summary-${tone}`}>
-      <p className="summary-title">{title}</p>
-      <p className="summary-value">{value}</p>
-      {subtitle ? <p className="summary-subtitle">{subtitle}</p> : null}
-    </article>
+    <MetricCard
+      title={title}
+      value={value}
+      subtitle={subtitle}
+      tone={tone}
+      icon={icon}
+      className={className}
+    />
   );
 }

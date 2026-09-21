@@ -6,6 +6,7 @@ import {
   MarkerPopup,
   MarkerTooltip,
 } from "@/components/ui/map";
+import { SignalMarker } from "@/components/ui/signal-marker";
 
 export default function TruckMap({ telemetry, label }) {
   const lat = telemetry && telemetry.gps && typeof telemetry.gps.lat === "number" ? telemetry.gps.lat : 0;
@@ -49,10 +50,8 @@ export default function TruckMap({ telemetry, label }) {
           >
             <MapMarker longitude={displayFix[1]} latitude={displayFix[0]}>
               <MarkerContent>
-                <div className="relative flex h-12 w-12 items-center justify-center">
-                  <span className="absolute h-12 w-12 rounded-full bg-primary/20" />
-                  <span className="absolute h-6 w-6 rounded-full border-2 border-white bg-primary shadow-lg" />
-                  <span className="absolute h-2 w-2 rounded-full bg-white" />
+                <div className="relative flex h-10 w-10 items-center justify-center">
+                  <SignalMarker size="lg" label={label} />
                 </div>
               </MarkerContent>
               <MarkerTooltip>{label}</MarkerTooltip>

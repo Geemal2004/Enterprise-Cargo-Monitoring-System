@@ -1,4 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Card, CardContent } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { useAuthContext } from "../context/AuthContext";
 
 export default function RequireAuth() {
@@ -8,11 +10,20 @@ export default function RequireAuth() {
   if (initializing) {
     return (
       <div className="auth-loading-shell">
-        <section className="panel-surface auth-loading-panel">
-          <p className="eyebrow">Authentication</p>
-          <h2>Checking session</h2>
-          <p className="muted-text">Validating your access token and tenant context.</p>
-        </section>
+        <Card className="w-full max-w-md">
+          <CardContent className="flex items-center gap-3 p-6">
+            <Spinner label="Validating session" />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Authentication
+              </p>
+              <h2 className="text-lg font-semibold text-foreground">Checking session</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Validating your access token and tenant context.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

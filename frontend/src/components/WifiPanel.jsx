@@ -169,16 +169,52 @@ export default function WifiPanel({
         commandTopic: response.data?.commandTopic,
       });
       setMqttState(response.data?.mqtt || null);
-      
-      setTimeout(() => {
-        setScanLoading((isLoading) => {
-          if (isLoading) {
-            setError(`No scan result received yet. Check EMQX topic: ${response.data?.commandTopic || "unknown"}`);
-            return false;
+
+      const startedAt = Date.now();
+      const pollWifiScan = async () => {
+        try {
+          const snapshot = await apiClient.get("/gateway/wifi/status", {
+            params: {
+              tenantCode: selectedUnit.tenantCode,
+              truckId: selectedUnit.truckId,
+              _: Date.now(),
+            },
+            headers: {
+              "Cache-Control": "no-cache",
+              Pragma: "no-cache",
+            },
+          });
+
+          const nextNetworks = snapshot.data?.networks || [];
+          onWifiSnapshot?.({
+            status: snapshot.data?.status || {
+              state: "unknown",
+              tenantCode: selectedUnit.tenantCode,
+              truckId: selectedUnit.truckId,
+            },
+            networks: nextNetworks,
+          });
+          setMqttState(snapshot.data?.mqtt || null);
+
+          if (nextNetworks.length > 0) {
+            setScanLoading(false);
+            setError("");
+            return;
           }
-          return isLoading;
-        });
-      }, 35000);
+        } catch (_pollError) {
+          // Keep waiting until the scan timeout below; the command may still complete over MQTT.
+        }
+
+        if (Date.now() - startedAt < 35000) {
+          setTimeout(pollWifiScan, 3000);
+          return;
+        }
+
+        setScanLoading(false);
+        setError(`No scan result received yet. Check EMQX topic: ${response.data?.commandTopic || "unknown"}`);
+      };
+
+      setTimeout(pollWifiScan, 3000);
     } catch (scanError) {
       setScanLoading(false);
       setError(scanError?.response?.data?.error || scanError.message || "Failed to request WiFi scan.");

@@ -7,6 +7,10 @@ import StatusCard from "../components/StatusCard";
 import StatusPill from "../components/StatusPill";
 import TrendCharts from "../components/TrendCharts";
 import TruckMap from "../components/TruckMap";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/navigation";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Map,
   MapControls,
@@ -306,40 +310,58 @@ export default function TruckDetailPage() {
 
   if (!loading && !selectedEntry) {
     return (
-      <section className="panel-surface">
-        <h2>Truck Detail</h2>
-        <p className="empty-state">No telemetry is available yet for any truck/container.</p>
-        <Link className="table-action" to="/fleet">
-          Back to Fleet Overview
+      <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm">
+        <PageHeader
+          eyebrow="Asset detail"
+          title="Truck Detail"
+          description="No telemetry is available yet for any truck/container."
+        />
+        <Link to="/fleet" className="no-underline">
+          <Button variant="secondary" type="button">
+            Back to Fleet Overview
+          </Button>
         </Link>
       </section>
     );
   }
 
   if (!selectedEntry) {
-    return <p className="empty-state">Loading selected asset details...</p>;
+    return (
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-6 shadow-sm">
+        <Spinner label="Loading asset" />
+        <p className="text-sm text-muted-foreground">Loading selected asset details…</p>
+      </div>
+    );
   }
 
   return (
-    <div className="page-grid">
-      <section className={`status-banner status-${deviceStatus.tone}`}>
+    <div className="page-grid gap-4">
+      <section
+        className={`status-banner status-${deviceStatus.tone} rounded-xl`}
+      >
         <div>
-          <p className="eyebrow">Asset Detail</p>
-          <h2>{selectedEntry.truckId} / {selectedEntry.containerId}</h2>
+          <p className="eyebrow">Asset detail</p>
+          <h2 className="font-mono text-xl tracking-tight md:text-2xl">
+            {selectedEntry.truckId} / {selectedEntry.containerId}
+          </h2>
           <p className="muted-text">
             Last update: {formatRelativeTime(lastSeenMs)} ({formatDateTime(lastSeenMs)})
           </p>
         </div>
         <div className="status-banner-right">
           <StatusPill tone={deviceStatus.tone}>{deviceStatus.label}</StatusPill>
-          <Link className="table-action" to="/fleet">Back to Fleet</Link>
+          <Link to="/fleet" className="no-underline">
+            <Button variant="outline" size="sm" type="button">
+              Back to Fleet
+            </Button>
+          </Link>
         </div>
       </section>
 
       {showingFallback ? (
-        <div className="notice-box">
+        <Alert tone="warning" title="Asset not found">
           The requested truck/container was not found. Showing the first available active unit.
-        </div>
+        </Alert>
       ) : null}
 
       <section className="sensor-grid">

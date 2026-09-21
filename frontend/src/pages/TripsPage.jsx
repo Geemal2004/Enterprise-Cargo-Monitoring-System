@@ -256,11 +256,16 @@ export default function TripsPage() {
   }
 
   return (
-    <div className="page-grid">
+    <div className="page-grid gap-4">
       <section>
-        <div className="panel-headline spaced-bottom">
-          <h2>Trips</h2>
-          <p>Start and complete trips with live and historical visibility.</p>
+        <div className="spaced-bottom">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Journey ops
+          </p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight md:text-3xl">Trips</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Start and complete trips with live and historical visibility.
+          </p>
         </div>
 
         <div className="summary-grid">

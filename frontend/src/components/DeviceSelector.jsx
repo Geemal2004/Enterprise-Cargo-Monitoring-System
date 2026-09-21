@@ -1,27 +1,29 @@
-export default function DeviceSelector({ devices, selectedKey, onChange }) {
+import { Label, Select } from "@/components/ui/input";
+
+export default function DeviceSelector({ devices, selectedKey, onChange, label = "Truck/Container" }) {
   if (!devices || devices.length === 0) {
     return (
-      <div>
-        <span className="label">Truck/Container:</span>
-        <span className="muted">No active device</span>
+      <div className="grid gap-1.5">
+        <span className="text-sm font-medium text-muted-foreground">{label}</span>
+        <span className="text-sm text-muted-foreground">No active device</span>
       </div>
     );
   }
 
   if (devices.length === 1) {
     return (
-      <div>
-        <span className="label">Truck/Container:</span>
-        <strong>{devices[0].label}</strong>
+      <div className="grid gap-1.5">
+        <span className="text-sm font-medium text-muted-foreground">{label}</span>
+        <strong className="text-sm text-foreground">{devices[0].label}</strong>
       </div>
     );
   }
 
   return (
-    <label>
-      <span className="label">Truck/Container:</span>
-      <select
-        className="select"
+    <Label htmlFor="device-selector" className="min-w-[200px]">
+      {label}
+      <Select
+        id="device-selector"
         value={selectedKey}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -30,7 +32,7 @@ export default function DeviceSelector({ devices, selectedKey, onChange }) {
             {device.label}
           </option>
         ))}
-      </select>
-    </label>
+      </Select>
+    </Label>
   );
 }
