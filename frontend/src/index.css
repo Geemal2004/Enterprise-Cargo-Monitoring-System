@@ -1179,6 +1179,91 @@ body {
   }
 }
 
+/* Anchored sections and sticky cards never hide under the fixed nav */
+section[id],
+article[id] {
+  scroll-margin-top: 104px;
+}
+
+/* Skip-to-content link: visible on keyboard focus only */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 16px;
+  z-index: 100;
+  border-radius: 12px;
+  background: #fff;
+  color: #0b1220;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  padding: 12px 20px;
+  text-decoration: none;
+  transition: top 0.2s ease;
+}
+.skip-link:focus-visible {
+  top: 12px;
+  outline: 3px solid var(--ld-accent, #22d3ee);
+  outline-offset: 2px;
+}
+
+/* Consistent, visible keyboard focus everywhere on the landing page */
+.landing a:focus-visible,
+.landing button:focus-visible,
+.landing summary:focus-visible,
+.landing input:focus-visible,
+.landing select:focus-visible,
+.landing textarea:focus-visible {
+  outline: 3px solid var(--ld-accent, #22d3ee);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+/* Accessible FAQ disclosure */
+.landing details.faq-item {
+  border: 1px solid var(--cm-border);
+  border-radius: var(--ld-radius, 16px);
+  background: #fff;
+  padding: 4px 20px;
+}
+.landing details.faq-item summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #0b1220;
+}
+.landing details.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.landing details.faq-item summary::after {
+  content: "+";
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: rgba(11, 110, 143, 0.1);
+  color: #0b6e8f;
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+.landing details.faq-item[open] summary::after {
+  content: "−";
+}
+.landing details.faq-item .faq-answer {
+  padding: 0 0 20px;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: #475569;
+  max-width: 68ch;
+}
+
 /* Landing page styles scoped to the homepage — colors come from tokens.css */
 .landing {
   font-family: var(--font-sans);

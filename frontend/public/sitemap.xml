@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TODO(owner): replace with the production domain and keep updated -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://cargomonitor.example.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://cargomonitor.example.com/login</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://cargomonitor.example.com/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://cargomonitor.example.com/terms</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+</urlset>

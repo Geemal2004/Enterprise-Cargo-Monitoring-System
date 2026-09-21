@@ -159,6 +159,33 @@
   --stagger-sm: 60ms;
   --stagger-md: 100ms;
 
+  /* ——— Launch-grade landing system (contrast-checked, WCAG 2.2 AA) ——— */
+  --ld-bg: #060b14;
+  --ld-bg-elevated: #0b1220;
+  --ld-surface: #111a2c;
+  --ld-border: rgba(255, 255, 255, 0.08);
+  --ld-text: #f3f6fb;
+  --ld-text-secondary: #a9b4c6;
+  --ld-accent: #22d3ee;
+  --ld-accent-strong: #67e8f9;
+  --ld-success: #34d399;
+  --ld-warning: #fbbf24;
+  --ld-danger: #f87171;
+  --ld-light-bg: #ffffff;
+  --ld-light-canvas: #f5f7fa;
+  --ld-light-text: #0b1220;
+  --ld-light-secondary: #475569;
+
+  /* Fluid display scale: 12/14/16/18/20/24/32/44/64/88 */
+  --ld-text-micro: clamp(0.75rem, 0.72rem + 0.15vw, 0.8125rem);
+  --ld-section-pad: clamp(96px, 12vw, 160px);
+  --ld-card-pad: 24px;
+  --ld-radius: 16px;
+  --ld-radius-lg: 24px;
+  --ld-shadow-card: 0 24px 60px -28px rgba(11, 18, 32, 0.35);
+  --ld-shadow-dark: 0 36px 90px -30px rgba(0, 0, 0, 0.6);
+  --ld-focus-ring: 0 0 0 3px #060b14, 0 0 0 5px var(--ld-accent);
+
   /* Landing aliases → same system (Phase 4 will restyle surfaces; tokens stay shared) */
   --landing-background: var(--cm-canvas);
   --landing-foreground: var(--cm-text);

@@ -9,6 +9,8 @@ import { AuthProvider } from "./context/AuthContext";
 import { FleetDataProvider } from "./context/FleetDataContext";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
+import PrivacyPage from "./pages/PrivacyPage";
+import TermsPage from "./pages/TermsPage";
 import FleetOverviewPage from "./pages/FleetOverviewPage";
 
 const AlertsPage = lazy(() => import("./pages/AlertsPage"));
@@ -46,6 +48,8 @@ export default function App() {
 						<Routes>
 							<Route path="/" element={<HomePage />} />
 							<Route path="/login" element={<LoginPage />} />
+							<Route path="/privacy" element={<PrivacyPage />} />
+							<Route path="/terms" element={<TermsPage />} />
 							<Route path="/dashboard" element={<Navigate to="/fleet" replace />} />
 
 							<Route element={<RequireAuth />}>
